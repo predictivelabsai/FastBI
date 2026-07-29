@@ -105,7 +105,8 @@ NAV_ITEMS = [
                  ("builder", "Query Builder", "🧱", "/build"),
                  ("sqllab", "SQL Lab + Ask AI", "🧠", "/sql")]),
     ("DATA", [("sources", "Data Source", "🗄️", "/sources")]),
-    ("HELP", [("guide", "User Guide", "📖", "/guide")]),
+    ("HELP", [("guide", "User Guide", "📖", "/guide"),
+              ("developers", "Developers", "⌘", "/developers")]),
 ]
 SAMPLE_QUESTIONS = [
     "What's our total revenue?",

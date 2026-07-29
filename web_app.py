@@ -25,12 +25,15 @@ from fasthtml.common import (
     RedirectResponse, Script, Style, Link, Title,
 )
 from starlette.responses import StreamingResponse, Response
+from starlette.responses import JSONResponse
 
 import db
 from web.layout import page, LAYOUT_CSS
 from web import views, ai
 from web.landing import landing_page
+from web.developer import developer_page
 from web import account_auth, google_auth
+from web.api import api
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("fastinsights")
@@ -42,6 +45,17 @@ SECRET = os.getenv("FASTINSIGHTS_SECRET", secrets.token_hex(32))
 PORT = int(os.getenv("FASTINSIGHTS_PORT", "5008"))
 
 app, rt = fast_app(live=False, pico=False, secret_key=SECRET, hdrs=[Style(LAYOUT_CSS)])
+app.mount("/api", api)
+
+
+@rt("/swagger.json", methods=["GET"])
+def swagger_schema():
+    return JSONResponse(api.openapi())
+
+
+@rt("/developers", methods=["GET"])
+def developers():
+    return developer_page()
 
 
 account_auth.register_fasthtml_routes(rt, app_name="FastInsights", session_key="user", success_path="/")
