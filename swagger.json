@@ -617,6 +617,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "List charts",
         "tags": [
           "Charts"
@@ -669,6 +674,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "Get one charts record",
         "tags": [
           "Charts"
@@ -744,6 +754,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "List dashboards",
         "tags": [
           "Dashboards"
@@ -861,6 +876,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "Get one dashboards record",
         "tags": [
           "Dashboards"
@@ -957,6 +977,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "List warehouse orders",
         "tags": [
           "Warehouse orders"
@@ -1009,6 +1034,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "Get one warehouse orders record",
         "tags": [
           "Warehouse orders"
@@ -1084,6 +1114,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "List queries",
         "tags": [
           "Queries"
@@ -1136,6 +1171,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "FastSME API token": []
+          }
+        ],
         "summary": "Get one queries record",
         "tags": [
           "Queries"

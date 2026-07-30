@@ -1,5 +1,8 @@
 """Shared FastSME FastAPI primitives vendored into each product repository."""
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -76,6 +79,23 @@ class SQLiteBackend:
         self.resources = {resource.slug: resource for resource in resources}
         if initialize:
             initialize()
+        self.ensure_tenant_columns()
+
+    def ensure_tenant_columns(self) -> None:
+        """Add a compatibility tenant discriminator without changing product models."""
+        with self.connection() as connection:
+            for resource in self.resources.values():
+                columns = {
+                    row["name"] for row in connection.execute(
+                        f'PRAGMA table_info("{resource.table}")'
+                    ).fetchall()
+                }
+                if "_fastoffice_org_id" not in columns:
+                    connection.execute(
+                        f'ALTER TABLE "{resource.table}" ADD COLUMN "_fastoffice_org_id" '
+                        "TEXT NOT NULL DEFAULT 'standalone'"
+                    )
+            connection.commit()
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -96,7 +116,7 @@ class SQLiteBackend:
                 f"API resource {resource.slug!r} references missing table "
                 f"{resource.table!r}"
             )
-        return [dict(row) for row in rows]
+        return [dict(row) for row in rows if row["name"] != "_fastoffice_org_id"]
 
     def primary_key(self, resource: Resource) -> str:
         if resource.primary_key:
@@ -112,12 +132,13 @@ class SQLiteBackend:
         limit: int,
         offset: int,
         query: str | None,
+        organisation_id: str = "standalone",
     ) -> tuple[list[dict[str, Any]], int]:
-        where = ""
-        params: list[Any] = []
+        where = ' WHERE "_fastoffice_org_id"=?'
+        params: list[Any] = [organisation_id]
         if query and resource.search_fields:
             clauses = [f'CAST("{field}" AS TEXT) LIKE ?' for field in resource.search_fields]
-            where = " WHERE " + " OR ".join(clauses)
+            where += " AND (" + " OR ".join(clauses) + ")"
             params.extend([f"%{query}%"] * len(clauses))
         with self.connection() as connection:
             total = connection.execute(
@@ -130,16 +151,16 @@ class SQLiteBackend:
             ).fetchall()
         return [_serialise_row(row) for row in rows], total
 
-    def get(self, resource: Resource, item_id: str) -> dict[str, Any] | None:
+    def get(self, resource: Resource, item_id: str, organisation_id: str = "standalone") -> dict[str, Any] | None:
         primary_key = self.primary_key(resource)
         with self.connection() as connection:
             row = connection.execute(
-                f'SELECT * FROM "{resource.table}" WHERE "{primary_key}"=?',
-                (item_id,),
+                f'SELECT * FROM "{resource.table}" WHERE "{primary_key}"=? AND "_fastoffice_org_id"=?',
+                (item_id, organisation_id),
             ).fetchone()
         return _serialise_row(row) if row else None
 
-    def create(self, resource: Resource, values: dict[str, Any]) -> dict[str, Any]:
+    def create(self, resource: Resource, values: dict[str, Any], organisation_id: str = "standalone") -> dict[str, Any]:
         allowed = set(resource.write_fields)
         clean = {key: value for key, value in values.items() if key in allowed and value is not None}
         if not clean:
@@ -162,6 +183,8 @@ class SQLiteBackend:
             ):
                 clean[field] = timestamp
         fields = tuple(clean)
+        clean["_fastoffice_org_id"] = organisation_id
+        fields = tuple(clean)
         placeholders = ",".join("?" for _ in fields)
         quoted = ",".join(f'"{field}"' for field in fields)
         with self.connection() as connection:
@@ -171,7 +194,7 @@ class SQLiteBackend:
             )
             connection.commit()
             item_id = cursor.lastrowid
-        created = self.get(resource, str(item_id))
+        created = self.get(resource, str(item_id), organisation_id)
         return created or clean
 
 
@@ -248,6 +271,45 @@ bearer = HTTPBearer(
 )
 
 
+@dataclass(frozen=True)
+class Principal:
+    organisation_id: str
+    role: str
+    subject: str
+
+
+def _suite_principal(token: str, audience: str) -> Principal | None:
+    secret = os.getenv("FASTOFFICE_SSO_SECRET", "")
+    if not secret:
+        return None
+    try:
+        encoded, supplied = token.split(".", 1)
+        expected = hmac.new(secret.encode(), encoded.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, supplied):
+            return None
+        body = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        if body.get("aud") != audience or body.get("exp", 0) < int(datetime.now(UTC).timestamp()):
+            return None
+        return Principal(str(body["org_id"]), str(body.get("role", "member")), str(body["sub"]))
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+
+
+def api_principal(audience: str):
+    def dependency(credentials: HTTPAuthorizationCredentials | None = Security(bearer)) -> Principal:
+        supplied = credentials.credentials if credentials else ""
+        suite = _suite_principal(supplied, audience)
+        if suite:
+            return suite
+        configured = os.getenv("FASTSME_API_TOKEN", "")
+        if configured and secrets.compare_digest(configured, supplied):
+            return Principal("standalone", "admin", "service")
+        if os.getenv("FASTSME_PUBLIC_API_READS", "true").lower() in {"1", "true", "yes"} and not supplied:
+            return Principal("standalone", "viewer", "public")
+        raise HTTPException(status_code=401, detail={"code": "invalid_token", "message": "A tenant-scoped bearer token is required.", "details": {}})
+    return dependency
+
+
 def require_write_token(
     credentials: HTTPAuthorizationCredentials | None = Security(bearer),  # noqa: B008
 ) -> None:
@@ -308,7 +370,7 @@ def create_sqlite_api(
         allow_origins=["*"],
         allow_credentials=False,
         allow_methods=["GET", "HEAD", "OPTIONS"],
-        allow_headers=["Accept", "Content-Type"],
+        allow_headers=["Accept", "Content-Type", "Authorization"],
     )
 
     @api.exception_handler(HTTPException)
@@ -345,6 +407,8 @@ def create_sqlite_api(
 
     def register(resource: Resource) -> None:
         item_model, list_model, create_model_type = _models_for(backend, resource)
+        audience = product.lower().removeprefix("fast")
+        principal_dependency = api_principal(audience)
 
         @api.get(
             f"/v1/{resource.slug}",
@@ -358,9 +422,10 @@ def create_sqlite_api(
             limit: int = Query(default=50, ge=1, le=200),
             offset: int = Query(default=0, ge=0),
             q: str | None = Query(default=None, description="Case-insensitive text search"),
+            principal: Principal = Depends(principal_dependency),
         ) -> dict[str, Any]:
             rows, total = backend.list(
-                resource, limit=limit, offset=offset, query=q
+                resource, limit=limit, offset=offset, query=q, organisation_id=principal.organisation_id
             )
             return {
                 "data": rows,
@@ -375,8 +440,8 @@ def create_sqlite_api(
             summary=f"Get one {resource.title.lower()} record",
             operation_id=f"get_{resource.slug.replace('-', '_')}",
         )
-        def get_item(item_id: str) -> dict[str, Any]:
-            row = backend.get(resource, item_id)
+        def get_item(item_id: str, principal: Principal = Depends(principal_dependency)) -> dict[str, Any]:
+            row = backend.get(resource, item_id, principal.organisation_id)
             if row is None:
                 raise HTTPException(
                     status_code=404,
@@ -390,11 +455,14 @@ def create_sqlite_api(
 
         if create_model_type is not None:
 
-            def create_item(payload):
+            def create_item(payload, principal=Depends(principal_dependency)):
+                if principal.role not in {"owner", "admin", "member"}:
+                    raise HTTPException(status_code=403, detail={"code": "forbidden", "message": "This role cannot create records.", "details": {}})
                 try:
                     return backend.create(
                         resource,
                         payload.model_dump(exclude_none=True),
+                        principal.organisation_id,
                     )
                 except (sqlite3.IntegrityError, sqlite3.OperationalError, ValueError) as exc:
                     raise HTTPException(
@@ -408,6 +476,7 @@ def create_sqlite_api(
 
             create_item.__annotations__ = {
                 "payload": create_model_type,
+                "principal": Principal,
                 "return": dict[str, Any],
             }
             api.post(
@@ -419,7 +488,7 @@ def create_sqlite_api(
                     422: {"model": ErrorEnvelope},
                     503: {"model": ErrorEnvelope},
                 },
-                dependencies=[Depends(require_write_token)],
+                dependencies=[],
                 tags=[resource.title],
                 summary=f"Create a {resource.title.lower()} record",
                 description=(

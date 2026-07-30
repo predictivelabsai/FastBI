@@ -32,7 +32,7 @@ from web.layout import page, LAYOUT_CSS
 from web import views, ai
 from web.landing import landing_page
 from web.developer import developer_page
-from web import account_auth, google_auth
+from web import account_auth, google_auth, suite_auth
 from web.api import api
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
@@ -114,6 +114,14 @@ def google_start(session, request):
     state = google_auth.new_state()
     session["google_oauth_state"] = state
     return RedirectResponse(google_auth.authorize_url(request, state), status_code=303)
+
+@rt("/auth/suite/callback")
+def suite_callback(session, ticket: str = ""):
+    identity = suite_auth.redeem(ticket, "insights")
+    if not identity: return RedirectResponse("/login?error=FastOffice+session+is+invalid+or+expired", status_code=303)
+    account_auth.accounts.link_google(identity["email"], identity["name"])
+    session["user"], session["suite_identity"] = identity["email"], {k: identity[k] for k in ("sub","org_id","org_name","role")}
+    return RedirectResponse("/", status_code=303)
 
 
 @rt("/auth/google/callback")
