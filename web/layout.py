@@ -25,6 +25,8 @@ a{color:var(--accent);text-decoration:none;} a:hover{text-decoration:underline;}
 .topbar{grid-area:top;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border);}
 .brand{font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px;font-size:16px;}
 .brand-dot{width:11px;height:11px;background:var(--accent);border-radius:3px;display:inline-block;}
+.brand-wordmark{display:inline-flex;align-items:baseline;gap:0;font-weight:800;}
+.brand-wordmark .brand-bi{color:var(--accent);font-weight:700;letter-spacing:.5px;}
 .env-pill{background:var(--accent-light);color:var(--accent-hover);padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
 .topbar .actions{display:flex;gap:10px;align-items:center;}
 .left-pane{grid-area:left;background:var(--surface);border-right:1px solid var(--border);padding:12px 0;overflow-y:auto;}
@@ -123,8 +125,8 @@ def topbar(env, user_email):
         Span(env, cls="env-pill"),
         Span(user_email or "", style="color:var(--text-mute);font-size:12px;") if user_email else None,
         A("Logout", href="/logout", cls="btn") if user_email else None, cls="actions")
-    return Div(Div(Span(cls="brand-dot"), Span("Fast", style="font-weight:800;"),
-                   Span("BI", style="color:var(--accent);font-weight:700;letter-spacing:.5px;"), cls="brand"),
+    return Div(Div(Span(cls="brand-dot"),
+                   Span("Fast", Span("BI", cls="brand-bi"), cls="brand-wordmark"), cls="brand"),
                right, cls="topbar")
 
 
