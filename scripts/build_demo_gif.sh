@@ -6,15 +6,16 @@
 #
 #   bash scripts/build_demo_gif.sh
 #
-# Output: docs/demo/fastinsights-walkthrough.gif  (1 frame ≈ 1.6s, looping)
+# Output: docs/demo/fastbi-walkthrough.gif  (1 frame ≈ 1.6s, looping)
 #
 # Generic across the fasthtml-oss-migrations repos — only the output name and
 # paths differ. Uses ImageMagick `convert`; falls back to ffmpeg if present.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-FRAMES_DIR="docs/demo/frames"
-OUT="docs/demo/fastinsights-walkthrough.gif"
+FRAMES_DIR="docs/demo/fastbi-frames"
+OUT="docs/demo/fastbi-walkthrough.gif"
+LANDING_OUT="static/product-demo.gif"
 DELAY="${DELAY:-160}"        # hundredths of a second between frames
 WIDTH="${WIDTH:-1100}"       # downscale width for a smaller GIF
 
@@ -39,4 +40,6 @@ else
   exit 1
 fi
 
+cp "$OUT" "$LANDING_OUT"
 echo "Wrote $OUT ($(du -h "$OUT" | cut -f1))"
+echo "Updated $LANDING_OUT"

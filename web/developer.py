@@ -1,13 +1,14 @@
-"""Public and in-app developer documentation for FastInsights."""
+"""Public and in-app developer documentation for FastBI."""
 from fasthtml.common import *
 
 from .api import RESOURCES
 from .landing import FAVICON
+from .seo import seo_meta
 
 ACCENT = "#7c3aed"
 TINT = "#f5f3ff"
-BASE_URL = "https://insights.fastsme.com"
-REPOSITORY = "https://github.com/predictivelabsai/FastInsights"
+BASE_URL = "https://fastbi.org"
+REPOSITORY = "https://github.com/predictivelabsai/FastBI"
 
 DEVELOPER_CSS = """
 .dev-docs{--dev-accent:#7c3aed;--dev-tint:#f5f3ff;--dev-ink:#111827;--dev-muted:#667085;--dev-line:#e7eaf0;color:var(--dev-ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}
@@ -40,7 +41,7 @@ def developer_content():
         Style(DEVELOPER_CSS),
         Div(
             Span("Developer platform · API v1", cls="dev-eyebrow"),
-            H1("Build with the FastInsights API."),
+            H1("Build with the FastBI API."),
             P("Read the live demo database through a typed, versioned API. Selected integration writes are implemented behind bearer-token authentication.", cls="dev-lede"),
             Div(
                 A("Open Swagger UI", href="/api/docs", cls="dev-btn primary"),
@@ -74,17 +75,22 @@ PY"""), cls="dev-example"),
 def developer_page():
     return Html(
         Head(
-            Title("FastInsights Developers · FastSME"),
+            Title("FastBI Developers · FastSME"),
             Meta(charset="utf-8"),
             Meta(name="viewport", content="width=device-width, initial-scale=1"),
-            Meta(name="description", content="Developer API documentation for FastInsights."),
+            Meta(name="description", content="Developer API documentation for FastBI."),
+            *seo_meta(
+                path="/developers",
+                title="FastBI Developer API · FastSME",
+                description="Build integrations with the public FastBI API, OpenAPI schemas, examples, and token-gated writes.",
+            ),
             Link(rel="icon", type="image/svg+xml", href=FAVICON),
             Link(rel="preconnect", href="https://fonts.googleapis.com"),
             Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap"),
         ),
         Body(
             Nav(
-                A(Span(cls="dev-diamond"), Span("FastInsights Developers"), href="/developers", cls="dev-brand"),
+                A(Span(cls="dev-diamond"), Span("FastBI Developers"), href="/developers", cls="dev-brand"),
                 A("Back to product", href="/", cls="dev-btn"),
                 cls="dev-public-nav dev-docs",
             ),

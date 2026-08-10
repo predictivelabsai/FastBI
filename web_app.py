@@ -1,4 +1,4 @@
-"""FastInsights — an open-source BI tool built with FastHTML.
+"""FastBI — an open-source BI tool built with FastHTML.
 
 A server-side, HTMX-driven port of the core of Frappe Insights: a synthetic
 data warehouse, saved queries that render Plotly charts, dashboards, a SQL lab,
@@ -7,7 +7,7 @@ and an AI text-to-SQL assistant — all read-only over synthetic data.
 Run:
     python web_app.py            # http://localhost:5008
 
-Login: admin@fastinsights.example / FastInsights2026$  (override via .env)
+Set local admin credentials in ``.env`` or use Google sign-in.
 """
 from __future__ import annotations
 
@@ -29,20 +29,21 @@ from starlette.responses import JSONResponse
 
 import db
 from web.layout import page, LAYOUT_CSS
-from web import views, ai
-from web.landing import landing_page
+from web import views, ai, integrations
+from web.landing import landing_page, integrations_landing_page
+from web.seo import register_seo_routes
 from web.developer import developer_page
 from web import account_auth, google_auth, suite_auth
 from web.api import api
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
-logger = logging.getLogger("fastinsights")
+logger = logging.getLogger("fastbi")
 
-VALID_EMAIL = os.getenv("FASTINSIGHTS_ADMIN_EMAIL", "admin@fastinsights.example")
-VALID_PASSWORD = os.getenv("FASTINSIGHTS_ADMIN_PASSWORD", "FastInsights2026$")
-ENV_LABEL = os.getenv("FASTINSIGHTS_ENV_LABEL", "FastInsights")
-SECRET = os.getenv("FASTINSIGHTS_SECRET", secrets.token_hex(32))
-PORT = int(os.getenv("FASTINSIGHTS_PORT", "5008"))
+VALID_EMAIL = os.getenv("FASTBI_ADMIN_EMAIL", os.getenv("FASTINSIGHTS_ADMIN_EMAIL", "admin@fastbi.example"))
+VALID_PASSWORD = os.getenv("FASTBI_ADMIN_PASSWORD", os.getenv("FASTINSIGHTS_ADMIN_PASSWORD", ""))
+ENV_LABEL = os.getenv("FASTBI_ENV_LABEL", os.getenv("FASTINSIGHTS_ENV_LABEL", "FastBI"))
+SECRET = os.getenv("FASTBI_SECRET", os.getenv("FASTINSIGHTS_SECRET", secrets.token_hex(32)))
+PORT = int(os.getenv("FASTBI_PORT", os.getenv("FASTINSIGHTS_PORT", "5008")))
 
 app, rt = fast_app(live=False, pico=False, secret_key=SECRET, hdrs=[Style(LAYOUT_CSS)])
 app.mount("/api", api)
@@ -58,7 +59,52 @@ def developers():
     return developer_page()
 
 
-account_auth.register_fasthtml_routes(rt, app_name="FastInsights", session_key="user", success_path="/")
+@rt("/integrations", methods=["GET"])
+def integrations_page(session):
+    if not _user(session):
+        return integrations_landing_page()
+    flash = session.pop("integrations_flash", None) or {}
+    return _guard(session, "integrations", lambda: integrations.integrations_workspace(
+        flash.get("message", ""), flash.get("error", False)))
+
+
+@rt("/integrations/import", methods=["POST"])
+def integration_import(session, name: str = "", provider: str = "", url: str = ""):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    try:
+        if not name.strip():
+            raise integrations.IntegrationError("Give the connection a name.")
+        schema = integrations.pull_schema(url)
+        db.save_integration(name, provider or "Other", url, schema)
+        session["integrations_flash"] = {"message": f"Pulled and stored the schema for {name.strip()}."}
+    except integrations.IntegrationError as exc:
+        session["integrations_flash"] = {"message": str(exc), "error": True}
+    return RedirectResponse("/integrations", status_code=303)
+
+
+@rt("/migrations", methods=["GET"])
+def migrations_page(session):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    flash = session.pop("migrations_flash", None) or {}
+    return _guard(session, "migrations", lambda: integrations.migrations_workspace(
+        flash.get("message", ""), flash.get("error", False)))
+
+
+@rt("/migrations/run", methods=["POST"])
+async def migration_run(session, request):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    try:
+        dashboard_id = await integrations.generate_migration(await request.form())
+    except integrations.IntegrationError as exc:
+        session["migrations_flash"] = {"message": str(exc), "error": True}
+        return RedirectResponse("/migrations", status_code=303)
+    return RedirectResponse(f"/dashboards/{dashboard_id}", status_code=303)
+
+
+account_auth.register_fasthtml_routes(rt, app_name="FastBI", session_key="user", success_path="/")
 
 
 def _user(session):
@@ -81,13 +127,13 @@ def _guard(session, active, builder):
 
 
 def _login_card(error="", email=""):
-    return Title("FastInsights — Sign in"), Style(LAYOUT_CSS), Div(
-        Form(H1("FastInsights"), P("Sign in to your BI workspace"),
+    return Title("FastBI — Sign in"), Link(rel="icon", type="image/svg+xml", href="/static/favicon.svg"), Style(LAYOUT_CSS), Div(
+        Form(H1("FastBI"), P("Sign in to your BI workspace"),
              Input(name="email", type="email", placeholder="Email", value=email, required=True),
              Input(name="password", type="password", placeholder="Password", required=True),
              P(error, cls="error") if error else None,
              Button("Sign in", cls="btn primary", type="submit"),
-             P(NotStr("Demo: <code>admin@fastinsights.example</code> / <code>FastInsights2026$</code>"), cls="hint"),
+             P("Configure FASTBI_ADMIN_PASSWORD for local password sign-in, or use Google from the public page.", cls="hint"),
              method="post", action="/login", cls="login-card"), cls="login-wrap")
 
 
@@ -100,7 +146,7 @@ def get(session):
 
 @rt("/login")
 def post(session, email: str = "", password: str = ""):
-    if email.strip().lower() == VALID_EMAIL.lower() and password == VALID_PASSWORD:
+    if VALID_PASSWORD and email.strip().lower() == VALID_EMAIL.lower() and password == VALID_PASSWORD:
         session["user"] = email.strip().lower()
         return RedirectResponse("/", status_code=303)
     return _login_card("Invalid email or password.", email)
@@ -299,7 +345,7 @@ def get(session):
 
 @rt("/guide")
 def get(session):
-    body = (views._title("User Guide", "How to drive FastInsights"), Div(NotStr("""
+    body = (views._title("User Guide", "How to drive FastBI"), Div(NotStr("""
 <div class='card'><h3>Home</h3><p>Headline KPIs plus two flagship charts and links to your dashboards.</p></div>
 <div class='card'><h3>Dashboards</h3><p>Curated boards of charts in a responsive grid.</p></div>
 <div class='card'><h3>Queries & Charts</h3><p>Saved SQL queries, each bound to a chart type. Open one to see the
@@ -352,10 +398,14 @@ def _ensure_db():
         logger.info("No database found — seeding synthetic warehouse…")
         import seed
         seed.build()
+    db.init_app_schema()
 
 
 _ensure_db()
 
+
+register_seo_routes(app)
+
 if __name__ == "__main__":
-    logger.info("FastInsights on http://localhost:%s  (login %s)", PORT, VALID_EMAIL)
-    serve(port=PORT, reload=os.getenv("FASTINSIGHTS_RELOAD", "0") == "1")
+    logger.info("FastBI on http://localhost:%s  (login %s)", PORT, VALID_EMAIL)
+    serve(port=PORT, reload=os.getenv("FASTBI_RELOAD", os.getenv("FASTINSIGHTS_RELOAD", "0")) == "1")

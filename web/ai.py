@@ -1,4 +1,4 @@
-"""FastInsights AI — grounded chat, slash-commands, and text-to-SQL.
+"""FastBI AI — grounded chat, slash-commands, and text-to-SQL.
 
 Right-rail chat answers metric questions, grounded with a live data summary.
 The SQL Lab's "Ask the data" box calls ``text_to_sql()`` which asks the LLM for
@@ -14,7 +14,7 @@ import re
 import db
 
 PROVIDER = os.getenv("MODEL_PROVIDER", "xai")
-MODEL = os.getenv("MODEL_NAME", "grok-4-1-fast-reasoning")
+MODEL = os.getenv("MODEL_NAME", "grok-4.5")
 
 
 def _money(v):
@@ -40,7 +40,7 @@ def snapshot() -> str:
     ])
 
 
-SYSTEM_PROMPT = """You are the FastInsights assistant, embedded in an open-source BI tool.
+SYSTEM_PROMPT = """You are the FastBI assistant, embedded in an open-source BI tool.
 Help analysts understand a synthetic retail sales warehouse. Be concise; use Markdown
 (short tables, bold figures). All data is synthetic — never claim it's real. Base answers on
 the DATA SUMMARY below; for anything not in it, suggest using the SQL Lab's "Ask the data" box."""
@@ -68,7 +68,7 @@ def handle_command(text):
     cmd = parts[0].lower() if parts else ""
     arg = " ".join(parts[1:])
     if cmd in ("help", "?"):
-        return ("**FastInsights shortcuts**\n\n"
+        return ("**FastBI shortcuts**\n\n"
                 "- `/metrics` — headline numbers\n- `/tables` — warehouse schema\n"
                 "- `/top [region|category|customer]` — top breakdown\n\n"
                 "For SQL generation use the **SQL Lab → Ask the data** box.")

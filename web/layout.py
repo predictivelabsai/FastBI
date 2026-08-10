@@ -1,4 +1,4 @@
-"""FastInsights 3-pane layout — blue BI palette, Plotly charts, SSE AI rail."""
+"""FastBI 3-pane layout — business intelligence with Plotly charts and an AI rail."""
 from __future__ import annotations
 
 from fasthtml.common import (
@@ -104,7 +104,9 @@ NAV_ITEMS = [
                  ("queries", "Queries & Charts", "🧩", "/queries"),
                  ("builder", "Query Builder", "🧱", "/build"),
                  ("sqllab", "SQL Lab + Ask AI", "🧠", "/sql")]),
-    ("DATA", [("sources", "Data Source", "🗄️", "/sources")]),
+    ("DATA", [("sources", "Data Source", "🗄️", "/sources"),
+              ("integrations", "Integrations", "🔌", "/integrations"),
+              ("migrations", "Migrations", "↗", "/migrations")]),
     ("HELP", [("guide", "User Guide", "📖", "/guide"),
               ("developers", "Developers", "⌘", "/developers")]),
 ]
@@ -122,7 +124,7 @@ def topbar(env, user_email):
         Span(user_email or "", style="color:var(--text-mute);font-size:12px;") if user_email else None,
         A("Logout", href="/logout", cls="btn") if user_email else None, cls="actions")
     return Div(Div(Span(cls="brand-dot"), Span("Fast", style="font-weight:800;"),
-                   Span("Insights", style="color:var(--accent);font-weight:700;letter-spacing:.5px;"), cls="brand"),
+                   Span("BI", style="color:var(--accent);font-weight:700;letter-spacing:.5px;"), cls="brand"),
                right, cls="topbar")
 
 
@@ -161,7 +163,7 @@ def right_pane_chat(thread_id):
 
 def page(active, env, user_email, thread_id, *content, right_override=None):
     right = right_override if right_override is not None else right_pane_chat(thread_id)
-    return (Title("FastInsights"),
+    return (Title("FastBI"),
             Link(rel="icon", type="image/svg+xml", href="/static/favicon.svg"),
             Script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"),
             Script(src="https://cdn.plot.ly/plotly-2.35.2.min.js"),

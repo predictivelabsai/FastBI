@@ -1,4 +1,4 @@
-"""Center-pane page renderers for FastInsights."""
+"""Center-pane page renderers for FastBI."""
 from __future__ import annotations
 
 from fasthtml.common import (

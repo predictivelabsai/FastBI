@@ -516,11 +516,11 @@
       "name": "FastSME",
       "url": "https://fastsme.com/"
     },
-    "description": "Open integration access to FastInsights queries, charts, dashboards, and analytical facts.\n\n**Access model:** reads are public. Selected writes are implemented but disabled unless the deployment configures `FASTSME_API_TOKEN`; write clients then send it as a bearer token.",
+    "description": "Open integration access to FastBI queries, charts, dashboards, and analytical facts.\n\n**Access model:** reads are public. Selected writes are implemented but disabled unless the deployment configures `FASTSME_API_TOKEN`; write clients then send it as a bearer token.",
     "license": {
       "name": "MIT"
     },
-    "title": "FastInsights API",
+    "title": "FastBI API",
     "version": "1.0.0"
   },
   "openapi": "3.1.0",
@@ -1186,7 +1186,7 @@
   "servers": [
     {
       "description": "Production",
-      "url": "https://insights.fastsme.com/api"
+      "url": "https://fastbi.org/api"
     }
   ]
 }

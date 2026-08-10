@@ -1,15 +1,15 @@
 # Skills
 
-Capability reference for FastInsights + the shared **Frappe → FastHTML migration
+Capability reference for FastBI + the shared **Frappe → FastHTML migration
 playbook** (same recipe across `fasthtml-oss-migrations`; see also
 `FastCRM/SKILLS.md`).
 
 ---
 
-## Part 1 — FastInsights capabilities
+## Part 1 — FastBI capabilities
 
-**Entry:** `python web_app.py` → http://localhost:5008
-(login `admin@fastinsights.example` / `FastInsights2026$`).
+**Entry:** `python web_app.py` → http://localhost:5008. Configure local admin
+credentials in the ignored `.env`, or use Google SSO.
 
 ### Pages
 
@@ -20,6 +20,8 @@ playbook** (same recipe across `fasthtml-oss-migrations`; see also
 | Queries & Charts | `/queries`, `/queries/{id}` | saved SQL + chart + result table |
 | SQL Lab + Ask AI | `/sql` | run read-only SQL, or AI text-to-SQL |
 | Data Source | `/sources` | warehouse tables, row counts, samples |
+| Integrations | `/integrations` | guarded HTTP(S) schema/catalogue import |
+| Migrations | `/migrations` | report artefact upload → editable dashboard |
 | AI Assistant | `/ai` | metric chat (right rail) |
 
 ### Warehouse & safe SQL (`db.py`)
@@ -42,6 +44,14 @@ result grid. Charts re-init after HTMX swaps via a `data-plot` re-eval hook in
   one SELECT out, returns it for `run_sql`. Used by `/sql/ask`.
 - **Grounded chat** — streamed, with a live data summary in the system prompt.
 - **Slash-commands** (no key): `/metrics`, `/tables`, `/top region|category|customer`.
+
+### Integrations and migrations (`web/integrations.py`)
+
+- **Schema import** follows only validated public HTTP(S) URLs, rejects
+  credential-bearing/private-network targets, and caps responses at 2 MB.
+- **Report migration** accepts Power BI, Tableau, Looker, text, PDF, and image
+  artefacts up to 8 MB, combines them with a selected schema and migration
+  instructions, then creates a governed editable dashboard immediately.
 
 ---
 

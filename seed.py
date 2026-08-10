@@ -1,4 +1,4 @@
-"""Build the synthetic FastInsights warehouse + saved queries/charts/dashboards.
+"""Build the synthetic FastBI warehouse + saved queries/charts/dashboards.
 
 Deterministic, no PII. Creates a small retail sales star schema (wh_*) and the
 app metadata that explores it.
@@ -138,7 +138,7 @@ def build():
                     "INSERT INTO dashboard_charts(dashboard_id,chart_id,position,width) VALUES (?,?,?,?)",
                     (did, cid_by_qtitle[qtitle], pos, width))
 
-    print(f"FastInsights seeded → {db.DB_PATH}")
+    print(f"FastBI seeded → {db.DB_PATH}")
     print(f"  warehouse: {n_orders} orders · {len(QUERIES)} queries/charts · {len(DASHBOARDS)} dashboards")
 
 

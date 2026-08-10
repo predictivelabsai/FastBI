@@ -1,4 +1,4 @@
-"""FastInsights data layer.
+"""FastBI data layer.
 
 One SQLite file holds two things:
   * a synthetic **data warehouse** (a retail sales star schema, tables prefixed
@@ -17,7 +17,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-DB_PATH = os.getenv("FASTINSIGHTS_DB") or str(Path(__file__).parent / "fastinsights.sqlite")
+DB_PATH = os.getenv("FASTBI_DB") or os.getenv("FASTINSIGHTS_DB") or str(Path(__file__).parent / "fastbi.sqlite")
 
 CHART_TYPES = ["bar", "line", "pie", "row", "number"]
 
@@ -148,6 +148,26 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     content       TEXT NOT NULL,
     created       TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS data_integrations (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL,
+    provider      TEXT NOT NULL,
+    source_url    TEXT NOT NULL,
+    schema_text   TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'ready',
+    created       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS migration_reports (
+    id            INTEGER PRIMARY KEY,
+    source_tool   TEXT NOT NULL,
+    file_name     TEXT NOT NULL,
+    integration_id INTEGER REFERENCES data_integrations(id),
+    instructions  TEXT,
+    summary       TEXT NOT NULL,
+    dashboard_id  INTEGER REFERENCES dashboards(id),
+    status        TEXT NOT NULL DEFAULT 'generated',
+    created       TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -173,6 +193,37 @@ def dashboard_charts(did: int):
                    JOIN charts ch ON ch.id=dc.chart_id
                    LEFT JOIN queries q ON q.id=ch.query_id
                    WHERE dc.dashboard_id=? ORDER BY dc.position""", (did,))
+
+
+def integrations():
+    return rows("SELECT * FROM data_integrations ORDER BY id DESC")
+
+
+def save_integration(name: str, provider: str, source_url: str, schema_text: str) -> int:
+    with cursor() as conn:
+        conn.execute(
+            "INSERT INTO data_integrations(name,provider,source_url,schema_text) VALUES (?,?,?,?)",
+            (name.strip(), provider.strip(), source_url.strip(), schema_text),
+        )
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def migrations():
+    return rows("""SELECT m.*, i.name integration_name FROM migration_reports m
+                   LEFT JOIN data_integrations i ON i.id=m.integration_id
+                   ORDER BY m.id DESC""")
+
+
+def save_migration(source_tool: str, file_name: str, integration_id: int | None,
+                   instructions: str, summary: str, dashboard_id: int) -> int:
+    with cursor() as conn:
+        conn.execute(
+            """INSERT INTO migration_reports
+               (source_tool,file_name,integration_id,instructions,summary,dashboard_id)
+               VALUES (?,?,?,?,?,?)""",
+            (source_tool, file_name, integration_id, instructions, summary, dashboard_id),
+        )
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
 # --- save / delete saved queries (transactional) ----------------------------

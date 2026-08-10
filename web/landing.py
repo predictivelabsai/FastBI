@@ -1,9 +1,10 @@
-"""Public FastInsights product landing page."""
+"""Public FastBI product landing page."""
 from urllib.parse import quote
 
 from fasthtml.common import *
 
 from .account_auth import AUTH_CSS, AUTH_JS, auth_modal
+from .seo import seo_meta
 
 ACCENT = "#7c3aed"
 TINT = "#f5f3ff"
@@ -67,16 +68,18 @@ def partner_section():
 def landing_page():
     features = ['Interactive dashboards', 'Saved SQL and data sources', 'Guarded AI analysis']
     return Html(
-        Head(Title("FastInsights · FastSME"), Meta(charset="utf-8"),
+        Head(Title("FastBI · Business intelligence for FastSME"), Meta(charset="utf-8"),
              Meta(name="viewport", content="width=device-width, initial-scale=1"),
              Meta(name="description", content="Explore governed data with SQL, reusable queries, dashboards, Plotly visualisations, and guarded text-to-SQL."),
+             *seo_meta(),
              Link(rel="icon", type="image/svg+xml", href=FAVICON),
              Link(rel="preconnect", href="https://fonts.googleapis.com"),
              Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap"),
              Style(CSS + AUTH_CSS)),
         Body(
-            Nav(A(Span("F", cls="lp-mark"), Span("FastInsights"), href="/", cls="lp-brand"),
-                Div(A("Partners", href="#partners", cls="lp-nav-link"),
+            Nav(A(Span("F", cls="lp-mark"), Span("FastBI"), href="/", cls="lp-brand"),
+                Div(A("Integrations", href="/integrations", cls="lp-nav-link"),
+                    A("Partners", href="#partners", cls="lp-nav-link"),
                     A("Developers", href="/developers", cls="lp-nav-link"),
                     Button("Sign In", type="button", onclick="authOpen('login')", cls="lp-signin"),
                     cls="lp-nav-actions"), cls="lp-nav"),
@@ -86,25 +89,84 @@ def landing_page():
                         Div(Button("Sign In or Register", type="button", onclick="authOpen('login')", cls="lp-primary"),
                             A("Explore the open-source suite →", href="https://fastsme.com/products", cls="lp-secondary"),
                             cls="lp-actions"), cls="lp-hero"),
-                Section(Div(Img(src="/static/product-demo.gif", alt="FastInsights product tour",
+                Section(Div(Img(src="/static/product-demo.gif", alt="FastBI product tour",
                                 loading="eager", width="1854", height="909"),
                             P("Product tour · see the workspace in action"),
-                            cls="lp-demo-frame"), cls="lp-demo", aria_label="FastInsights product tour"),
+                            cls="lp-demo-frame"), cls="lp-demo", aria_label="FastBI product tour"),
                 Section(Div(*[Article(Span(f"0{i}", cls="lp-num"), H2(title),
                                       P("Everything you need for " + title.lower() + ", in one focused workspace."),
                                       cls="lp-card") for i, title in enumerate(features, 1)],
                             cls="lp-grid"), cls="lp-band"),
                 partner_section(),
                 Section(Div(Span("Developers", cls="lp-kicker"),
-                            H2("Build on FastInsights."),
+                            H2("Build on FastBI."),
                             P("Explore the public read API, typed schemas, examples, and token-gated integration writes.")),
                         A("Read the API documentation →", href="/developers", cls="lp-primary"),
                         cls="lp-developers"),
             ),
-            Footer(Span("FastInsights is part of the open-source FastSME suite."),
+            Footer(Span("FastBI is part of the open-source FastSME suite."),
                    A("View all products", href="https://fastsme.com/products", style="color:var(--accent)"),
                    cls="lp-footer"),
-            auth_modal("FastInsights"),
+            auth_modal("FastBI"),
             Script(AUTH_JS),
+        ),
+    )
+
+
+def integrations_landing_page():
+    warehouses = (
+        ("Microsoft Fabric", "OneLake and Fabric warehouse metadata, semantic models, and lakehouse tables."),
+        ("Google BigQuery", "Datasets, tables, views, partitions, and governed analytical models."),
+        ("Amazon Redshift", "Clusters, Serverless workgroups, schemas, views, and materialised views."),
+        ("Snowflake", "Databases, schemas, secure views, stages, and governed data products."),
+        ("Databricks", "Unity Catalog, Delta tables, lakehouse schemas, and SQL warehouses."),
+        ("SQL databases", "PostgreSQL, MySQL, SQL Server, Oracle, and compatible catalogue APIs."),
+    )
+    sources = (
+        ("Power BI", "Export model metadata, report definitions, screenshots, and measure notes."),
+        ("Tableau", "Bring workbook definitions, calculated fields, data-source mappings, and screenshots."),
+        ("Looker", "Import LookML, explores, dashboard definitions, and visual references."),
+    )
+    extra_css = """
+    .int-hero{max-width:1180px;margin:auto;padding:92px 24px 64px}.int-hero h1{font-size:clamp(42px,6vw,70px);line-height:1.03;letter-spacing:-.05em;max-width:900px;margin:20px 0}.int-hero p{font-size:20px;line-height:1.65;color:var(--muted);max-width:790px}
+    .int-section{max-width:1180px;margin:auto;padding:68px 24px}.int-section h2{font-size:36px;letter-spacing:-.035em;margin:10px 0 14px}.int-section>p{color:var(--muted);font-size:18px;line-height:1.65;max-width:780px}.int-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:32px}.int-card{border:1px solid var(--line);border-radius:20px;padding:24px;background:#fff}.int-card h3{margin:0 0 9px;font-size:18px}.int-card p{margin:0;color:var(--muted);line-height:1.55}.int-flow{background:var(--tint);border-block:1px solid color-mix(in srgb,var(--accent) 15%,white)}.int-step{display:flex;gap:14px;align-items:flex-start}.int-step b{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:50%;background:var(--accent);color:white}.int-cta{max-width:1180px;margin:24px auto 72px;padding:44px;border-radius:26px;background:#111827;color:white;display:flex;align-items:center;justify-content:space-between;gap:28px}.int-cta h2{margin:0 0 8px;font-size:30px}.int-cta p{margin:0;color:#cbd5e1;line-height:1.6}.int-cta .lp-primary{background:white;color:#111827;white-space:nowrap}@media(max-width:760px){.int-grid{grid-template-columns:1fr}.int-cta{margin-inline:18px;padding:30px;align-items:flex-start;flex-direction:column}}
+    """
+    return Html(
+        Head(Title("FastBI Integrations · Warehouses and BI migration"), Meta(charset="utf-8"),
+             Meta(name="viewport", content="width=device-width, initial-scale=1"),
+             Meta(name="description", content="Connect FastBI to major data warehouses and migrate dashboards from Power BI, Tableau, and Looker."),
+             *seo_meta(path="/integrations", title="FastBI Integrations · Warehouses and BI migration",
+                       description="Connect FastBI to major data warehouses and migrate dashboards from Power BI, Tableau, and Looker."),
+             Link(rel="icon", type="image/svg+xml", href=FAVICON),
+             Link(rel="preconnect", href="https://fonts.googleapis.com"),
+             Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap"),
+             Style(CSS + AUTH_CSS + extra_css)),
+        Body(
+            Nav(A(Span("F", cls="lp-mark"), Span("FastBI"), href="/", cls="lp-brand"),
+                Div(A("Product", href="/", cls="lp-nav-link"),
+                    A("Developers", href="/developers", cls="lp-nav-link"),
+                    Button("Sign In", type="button", onclick="authOpen('login')", cls="lp-signin"), cls="lp-nav-actions"), cls="lp-nav"),
+            Main(
+                Section(Span("Integrations and migrations", cls="lp-kicker"),
+                        H1("Bring your data estate—and the insights already built on it."),
+                        P("Connect warehouse catalogues, inspect governed schemas, and rebuild the reports your teams rely on without starting from a blank canvas."),
+                        Div(Button("Start an integration", type="button", onclick="authOpen('login')", cls="lp-primary"), cls="lp-actions"), cls="int-hero"),
+                Section(Span("Warehouses and databases", cls="lp-kicker"), H2("Connect the platforms you already run."),
+                        P("FastBI can ingest catalogue metadata and schema exports from cloud warehouses, lakehouses, and major SQL databases, then ground queries and dashboard generation in that structure."),
+                        Div(*[Article(H3(name), P(copy), cls="int-card") for name, copy in warehouses], cls="int-grid"), cls="int-section"),
+                Section(Div(Span("Migration paths", cls="lp-kicker"), H2("Move beyond legacy BI without losing the work."),
+                            P("Upload report definitions, screenshots, schema notes, and source mappings. FastBI uses the available structure and visual evidence to propose measures, charts, layouts, and a working dashboard you can refine."),
+                            Div(*[Article(H3(name), P(copy), cls="int-card") for name, copy in sources], cls="int-grid"), cls="int-section"), cls="int-flow"),
+                Section(Span("Generative workflow", cls="lp-kicker"), H2("From source artefacts to a live dashboard."),
+                        Div(*[Div(B(str(i)), Div(H3(title), P(copy)), cls="int-step") for i, (title, copy) in enumerate((
+                            ("Read the schema", "Pull a public catalogue or schema endpoint and preserve the tables, fields, and relationships as grounding context."),
+                            ("Read the existing report", "Use definitions, screenshots, and migration notes to understand metrics, visual hierarchy, filters, and intent."),
+                            ("Generate in FastBI", "Create a working dashboard from governed queries, then let an analyst validate and refine every chart."),
+                        ), 1)], cls="int-grid"), cls="int-section"),
+                Section(Div(H2("Ready to connect or migrate?"), P("The in-product workspaces pull schemas and turn uploaded report artefacts into editable dashboards.")),
+                        Button("Open FastBI", type="button", onclick="authOpen('login')", cls="lp-primary"), cls="int-cta"),
+            ),
+            Footer(Span("FastBI is part of the open-source FastSME suite."), A("Back to product", href="/", style="color:var(--accent)"), cls="lp-footer"),
+            auth_modal("FastBI"), Script(AUTH_JS),
         ),
     )

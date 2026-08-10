@@ -1,4 +1,4 @@
-"""FastInsights public reads and token-gated integration writes."""
+"""FastBI public reads and token-gated integration writes."""
 
 import db
 
@@ -13,7 +13,7 @@ RESOURCES = (
 
 backend = SQLiteBackend(db.DB_PATH, RESOURCES, initialize=db.init_app_schema)
 api = create_sqlite_api(
-    product="FastInsights", version="1.0.0",
-    description="Open integration access to FastInsights queries, charts, dashboards, and analytical facts.",
-    base_url="https://insights.fastsme.com", backend=backend, resources=RESOURCES,
+    product="FastBI", version="1.0.0",
+    description="Open integration access to FastBI queries, charts, dashboards, and analytical facts.",
+    base_url="https://fastbi.org", backend=backend, resources=RESOURCES,
 )

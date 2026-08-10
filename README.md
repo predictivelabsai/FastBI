@@ -1,10 +1,12 @@
-# FastInsights
+# FastBI
 
-**FastInsights** is an open-source **business-intelligence tool** built with
+**FastBI** is an open-source **business-intelligence tool** built with
 [FastHTML](https://fastht.ml) — a server-side, HTMX-driven port of the core of
 [Frappe Insights](https://github.com/frappe/insights). Python-first, no
 JavaScript framework: a synthetic data warehouse, saved queries that render
 **Plotly** charts, dashboards, a SQL lab, and an **AI text-to-SQL** assistant.
+
+Live at **[fastbi.org](https://fastbi.org)**.
 
 *Ask your data anything.* Runs on port **5008**.
 
@@ -13,7 +15,11 @@ JavaScript framework: a synthetic data warehouse, saved queries that render
 
 ## Demo
 
-![FastInsights walkthrough](docs/demo/fastinsights-walkthrough.gif)
+![FastBI walkthrough](docs/demo/fastbi-walkthrough.gif)
+
+Captured views: [desktop landing](docs/screenshots/fastbi-landing.png),
+[mobile landing](docs/screenshots/fastbi-landing-mobile.png), and
+[integrations and migrations](docs/screenshots/fastbi-integrations.png).
 
 ## Quickstart (native)
 
@@ -24,8 +30,9 @@ cp .env.sample .env          # add an LLM key to enable AI text-to-SQL
 .venv/bin/python web_app.py  # http://localhost:5008  (self-seeds on first boot)
 ```
 
-Login: `admin@fastinsights.example` / `FastInsights2026$`. Rebuild the warehouse
-with `.venv/bin/python seed.py`.
+Set `FASTBI_ADMIN_EMAIL` and `FASTBI_ADMIN_PASSWORD` in the ignored `.env` for
+local password sign-in, or configure Google SSO. Rebuild the warehouse with
+`.venv/bin/python seed.py`.
 
 ## Run with Docker
 
@@ -34,7 +41,7 @@ docker compose up --build      # http://localhost:5008
 ```
 
 `Dockerfile` (python:3.12-slim, port 5008) seeds on first boot;
-`docker-compose.yml` mounts a `fastinsights-data` volume at `/data`.
+`docker-compose.yml` mounts a `fastbi-data` volume at `/data`.
 
 ## Module tour
 
@@ -48,6 +55,13 @@ docker compose up --build      # http://localhost:5008
   it, and charts the result. The schema is shown alongside.
 - **Data Source** (`/sources`) — browse the warehouse tables with row counts and
   samples.
+- **Integrations** (`/integrations`) — pull a bounded public schema or catalogue
+  endpoint for Microsoft Fabric/OneLake, BigQuery, Redshift, Snowflake,
+  Databricks, or a major SQL database.
+- **Migrations** (`/migrations`) — upload Power BI, Tableau, Looker, report
+  definition, PDF, or screenshot artefacts and generate an editable dashboard
+  grounded in a selected schema. With `XAI_API_KEY` configured, PNG/JPEG report
+  screenshots are interpreted by the multimodal model before generation.
 - **AI Assistant** (right rail) — metric Q&A grounded in a live data summary;
   slash-commands `/metrics` `/tables` `/top` work with **no API key**.
 
@@ -61,7 +75,7 @@ a chart and table. The model never touches the database directly.
 
 ```ini
 MODEL_PROVIDER=xai          # xai | openai | anthropic | google
-MODEL_NAME=grok-4-1-fast-reasoning
+MODEL_NAME=grok-4.5
 XAI_API_KEY=...
 ```
 
@@ -77,6 +91,7 @@ seed.py           synthetic retail star schema + saved queries/charts/dashboards
 web/charts.py     Plotly chart + result-table rendering
 web/layout.py     3-pane shell, CSS, chat JS
 web/views.py      page renderers
+web/integrations.py  schema import and report migration workflows
 web/ai.py         grounded chat, slash-commands, text_to_sql()
 ```
 

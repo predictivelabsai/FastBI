@@ -1,11 +1,11 @@
-# FastInsights Roadmap — Frappe Insights feature comparison
+# FastBI Roadmap — Frappe Insights feature comparison
 
-FastInsights ports the **core** of [Frappe Insights](https://github.com/frappe/insights)
+FastBI ports the **core** of [Frappe Insights](https://github.com/frappe/insights)
 (~38 doctypes) to a FastHTML demonstrator.
 
 ## Implemented ✅
 
-| Capability | Upstream doctype(s) | FastInsights |
+| Capability | Upstream doctype(s) | FastBI |
 |---|---|---|
 | Data source | `Insights Data Source v3` | local synthetic SQLite warehouse (`wh_*`) |
 | Tables browser | `Insights Table v3` | `/sources` with schema + samples |
@@ -40,7 +40,7 @@ FastInsights ports the **core** of [Frappe Insights](https://github.com/frappe/i
 ## Later / out-of-scope 🗓️
 
 - **Live external connections** — `Insights Data Source v3` connects to MySQL,
-  Postgres, BigQuery, the site DB, etc. FastInsights uses a bundled SQLite
+  Postgres, BigQuery, the site DB, etc. FastBI uses a bundled SQLite
   warehouse; a read-only external-DB connector is the natural next step.
 - **Query transforms / pivot / joins UI** — `Insights Query Transform`,
   multi-query references (`Insights Query Reference`).
