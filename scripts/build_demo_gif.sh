@@ -6,7 +6,8 @@
 #
 #   bash scripts/build_demo_gif.sh
 #
-# Output: docs/demo/fastbi-walkthrough.gif  (1 frame ≈ 1.6s, looping)
+# Output: docs/demo/fastbi-walkthrough.gif (looping). Conversational Q&A
+# frames receive a longer dwell time so their answers remain readable.
 #
 # Generic across the fasthtml-oss-migrations repos — only the output name and
 # paths differ. Uses ImageMagick `convert`; falls back to ffmpeg if present.
@@ -17,6 +18,7 @@ FRAMES_DIR="docs/demo/fastbi-frames"
 OUT="docs/demo/fastbi-walkthrough.gif"
 LANDING_OUT="static/product-demo.gif"
 DELAY="${DELAY:-160}"        # hundredths of a second between frames
+QA_DELAY="${QA_DELAY:-260}"  # longer dwell for *-qa.png conversation frames
 WIDTH="${WIDTH:-1100}"       # downscale width for a smaller GIF
 
 if ! ls "$FRAMES_DIR"/*.png >/dev/null 2>&1; then
@@ -27,10 +29,15 @@ fi
 mkdir -p "$(dirname "$OUT")"
 
 if command -v convert >/dev/null 2>&1; then
-  convert -loop 0 -delay "$DELAY" \
-    -resize "${WIDTH}x" \
-    "$FRAMES_DIR"/*.png \
-    -layers Optimize "$OUT"
+  convert_args=(-loop 0)
+  for frame in "$FRAMES_DIR"/*.png; do
+    frame_delay="$DELAY"
+    case "$(basename "$frame")" in
+      *-qa.png) frame_delay="$QA_DELAY" ;;
+    esac
+    convert_args+=(-delay "$frame_delay" "$frame")
+  done
+  convert "${convert_args[@]}" -resize "${WIDTH}x" -layers Optimize "$OUT"
 elif command -v ffmpeg >/dev/null 2>&1; then
   ffmpeg -y -framerate "$(awk "BEGIN{print 100/$DELAY}")" \
     -pattern_type glob -i "$FRAMES_DIR/*.png" \
