@@ -30,7 +30,8 @@ from starlette.responses import JSONResponse
 
 import db
 import graph_db
-from web.layout import page, LAYOUT_CSS
+from web.layout import page, main_chat, LAYOUT_CSS
+from web.sse import parse as parse_sse
 from web import views, ai, integrations, graph_ai, graph_views
 from web.landing import landing_page, integrations_landing_page
 from web.seo import register_seo_routes
@@ -466,17 +467,14 @@ def get(session):
 
 @rt("/ai")
 def get(session):
-    body = (views._title("AI Assistant", "Chat lives in the right rail. For SQL generation, use the SQL Lab."),
-            Div(NotStr(
-                "<div class='card'><h3>What you can ask</h3><ul style='line-height:1.8;'>"
-                "<li>“What's our total revenue and margin?”</li>"
-                "<li>“Which region and category perform best?”</li>"
-                "<li>“How is revenue trending?”</li></ul>"
-                "<p style='color:var(--text-mute)'>Slash-commands (no API key): "
-                "<code>/metrics</code> <code>/tables</code> <code>/top region|category|customer</code></p>"
-                "<p>Want a custom query? The <a href='/sql'>SQL Lab</a> turns a plain-English question "
-                "into a read-only SQL query, runs it, and charts the result.</p></div>")))
-    return _guard(session, "ai", body)
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    thread_id = _thread(session)
+    history = db.rows(
+        "SELECT role,content,created FROM chat_messages WHERE thread_id=? ORDER BY id LIMIT 50",
+        (thread_id,),
+    )
+    return page("ai", ENV_LABEL, _user(session), thread_id, main_chat(thread_id, history))
 
 
 @rt("/guide")
@@ -500,9 +498,12 @@ schema-grounded Cypher. The right-rail selector can route conversational questio
 
 
 @rt("/chat/new")
-def get(session):
+def get(session, format: str = ""):
     session["thread"] = uuid.uuid4().hex
-    return P("Ask about your metrics — or use /tables /metrics /help.", cls="chat-empty-hint")
+    if format == "json":
+        return JSONResponse({"thread_id": session["thread"]})
+    return (P("Ask a question about the dashboard or its underlying data.", cls="chat-empty-hint"),
+            Input(type="hidden", name="thread_id", value=session["thread"], id="thread-id", hx_swap_oob="true"))
 
 
 @rt("/chat/stream")
@@ -520,19 +521,17 @@ async def post(session, message: str = "", thread_id: str = "", query_mode: str 
                          (tid, "user", message))
         full = []
         async for chunk in ai.stream_chat(message, query_mode):
-            if chunk.startswith("data: "):
-                try:
-                    tok = json.loads(chunk[6:]).get("token")
-                    if tok:
-                        full.append(tok)
-                except Exception:
-                    pass
+            event_name, payload = parse_sse(chunk)
+            if event_name == "token" and payload.get("token"):
+                full.append(payload["token"])
             yield chunk
         with db.cursor() as conn:
             conn.execute("INSERT INTO chat_messages(thread_id,role,content,created) VALUES(?,?,?,datetime('now'))",
                          (tid, "assistant", "".join(full)))
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive",
+    })
 
 
 def _ensure_db():

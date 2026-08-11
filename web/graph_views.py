@@ -8,6 +8,7 @@ from fasthtml.common import *
 
 import graph_db
 from web.views import _title
+from web.layout import generation_progress
 
 
 def _safe_json(value: Any) -> str:
@@ -147,7 +148,10 @@ def cypher_lab(default: str = "MATCH (a:OntologyNode)-[r]->(b:OntologyNode) RETU
             Div(H3("Ask the graph in plain English"), cls="card-header"),
             Form(Input(name="question", cls="askbox", placeholder="e.g. which metrics measure an order?", autocomplete="off"),
                  Button("Generate Cypher & run", cls="btn primary", type="submit", style="margin-top:8px;"),
-                 hx_post="/cypher/ask", hx_target="#cypher-result", hx_swap="innerHTML"),
+                 hx_post="/cypher/ask", hx_target="#cypher-result", hx_swap="innerHTML",
+                 **{"hx-indicator": "#cypher-generation-progress"}),
+            generation_progress("cypher-generation-progress", "Reading the ontology and generating safe Cypher…",
+                                "The interactive graph will appear when ready."),
             cls="card",
         ),
         Div(Div(H3("Cypher"), cls="card-header"),

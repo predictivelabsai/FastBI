@@ -15,10 +15,10 @@ def _num(v):
         return v
 
 
-def plotly(div_id: str, cols, data, chart_type="bar", x_col=None, y_col=None, height=300):
-    """Return (Div, Script) that draws a Plotly chart for the given result set."""
+def plotly_payload(cols, data, chart_type="bar", x_col=None, y_col=None, height=300):
+    """Build a JSON-safe Plotly figure shared by pages and streamed chat."""
     if not cols or not data:
-        return Div(P("No data.", style="color:var(--text-mute);"), cls="plot")
+        return None
     xi = cols.index(x_col) if x_col in cols else 0
     yi = cols.index(y_col) if y_col in cols else (1 if len(cols) > 1 else 0)
     xs = [r[xi] for r in data]
@@ -43,7 +43,15 @@ def plotly(div_id: str, cols, data, chart_type="bar", x_col=None, y_col=None, he
               "font": {"size": 11, "color": "#48526e"},
               "xaxis": {"automargin": True}, "yaxis": {"automargin": True},
               "showlegend": chart_type == "pie"}
-    spec = json.dumps({"data": traces, "layout": layout})
+    return {"data": traces, "layout": layout}
+
+
+def plotly(div_id: str, cols, data, chart_type="bar", x_col=None, y_col=None, height=300):
+    """Return (Div, Script) that draws a Plotly chart for the given result set."""
+    figure = plotly_payload(cols, data, chart_type, x_col, y_col, height)
+    if figure is None:
+        return Div(P("No data.", style="color:var(--text-mute);"), cls="plot")
+    spec = json.dumps(figure)
     return (Div(id=div_id, cls="plot"),
             Script(NotStr(
                 f"(function(){{var s={spec};"

@@ -7,7 +7,7 @@ from fasthtml.common import (
 )
 
 import db
-from web.layout import kpi_card
+from web.layout import kpi_card, generation_progress
 from web import charts
 
 
@@ -225,8 +225,9 @@ def sql_lab(sql_default=""):
                  Div(Button("Generate SQL & run", cls="btn primary", type="submit"),
                      style="margin-top:8px;"),
                  hx_post="/sql/ask", hx_target="#sql-result", hx_swap="innerHTML",
-                 **{"hx-indicator": "#ask-spin"}),
-            Span(NotStr("&nbsp;"), id="ask-spin", cls="htmx-indicator"),
+                 **{"hx-indicator": "#sql-generation-progress"}),
+            generation_progress("sql-generation-progress", "Generating and validating read-only SQL…",
+                                "The query will run automatically when ready."),
             cls="card"),
         Div(Div(H3("SQL"), cls="card-header"),
             Form(Textarea(default, name="sql", cls="sqlbox", spellcheck="false"),

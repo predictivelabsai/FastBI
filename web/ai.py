@@ -7,11 +7,13 @@ through ``db.run_sql`` (which enforces read-only) and rendered as a chart+table.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 
 import db
+from web.sse import event
 
 PROVIDER = os.getenv("MODEL_PROVIDER", "xai")
 MODEL = os.getenv("MODEL_NAME", "grok-4.5")
@@ -85,7 +87,7 @@ def route_mode(question: str, requested: str = "auto") -> str:
     return "sql" if any(term in text for term in sql_terms) else "assistant"
 
 
-def _sql_markdown(question: str) -> str:
+def _sql_response(question: str) -> tuple[str, dict | None]:
     sql, _note = text_to_sql(question)
     cols, rows_ = db.run_sql(sql, limit=50)
     lines = ["**SQL answer** — generated and executed against the read-only warehouse.", ""]
@@ -94,16 +96,44 @@ def _sql_markdown(question: str) -> str:
     else:
         lines.append("No matching rows were found.")
     lines.extend(["", "```sql", sql, "```", "Open **SQL Lab + Ask AI** for the chart and full result."])
-    return "\n".join(lines)
+    visual = None
+    if cols and rows_ and len(cols) > 1:
+        from web import charts
+
+        x_col, y_col = cols[0], None
+        for index, column in enumerate(cols[1:], start=1):
+            if rows_ and all(isinstance(charts._num(row[index]), float) for row in rows_[:10]):
+                y_col = column
+                break
+        if y_col:
+            chart_type = "line" if any(term in x_col.lower() for term in ("month", "date", "year", "week")) else "bar"
+            figure = charts.plotly_payload(cols, rows_[:50], chart_type, x_col, y_col, height=330)
+            if figure:
+                visual = {"kind": "plotly", "title": f"{y_col} by {x_col}", "figure": figure}
+    return "\n".join(lines), visual
 
 
-def _graph_markdown(question: str) -> str:
+def _sql_markdown(question: str) -> str:
+    return _sql_response(question)[0]
+
+
+def _graph_response(question: str) -> tuple[str, dict | None]:
     import graph_db
     from web import graph_ai
 
     cypher, params, explanation = graph_ai.text_to_cypher(question)
     result = graph_db.run_cypher(cypher, params)
-    return graph_ai.markdown_answer(question, result, explanation)
+    visual = None
+    if result.nodes:
+        visual = {
+            "kind": "network", "title": "Ontology relationships",
+            "nodes": result.nodes, "edges": result.edges,
+        }
+    return graph_ai.markdown_answer(question, result, explanation), visual
+
+
+def _graph_markdown(question: str) -> str:
+    return _graph_response(question)[0]
 
 
 def handle_command(text):
@@ -141,27 +171,40 @@ def handle_command(text):
 # --- streaming chat ---------------------------------------------------------
 
 async def stream_chat(message, query_mode: str = "auto"):
+    yield event("progress", {"stage": "route", "label": "Understanding your question…", "percent": 8})
     cmd = handle_command(message)
     if cmd is not None:
-        yield f"data: {json.dumps({'token': cmd})}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        yield event("progress", {"stage": "ground", "label": "Reading governed metrics…", "percent": 55})
+        yield event("token", {"token": cmd, "mode": "command"})
+        yield event("done", {"mode": "command"})
         return
     mode = route_mode(message, query_mode)
     if mode in {"sql", "graph"}:
         try:
-            answer = _sql_markdown(message) if mode == "sql" else _graph_markdown(message)
-            yield f"data: {json.dumps({'token': answer, 'mode': mode})}\n\n"
+            if mode == "sql":
+                yield event("progress", {"stage": "generate", "label": "Generating governed SQL…", "percent": 28})
+                answer, visual = await asyncio.to_thread(_sql_response, message)
+                yield event("progress", {"stage": "execute", "label": "Query complete — composing the answer…", "percent": 82})
+            else:
+                yield event("progress", {"stage": "generate", "label": "Generating schema-grounded Cypher…", "percent": 28})
+                answer, visual = await asyncio.to_thread(_graph_response, message)
+                yield event("progress", {"stage": "execute", "label": "Graph query complete — mapping relationships…", "percent": 82})
+            yield event("token", {"token": answer, "mode": mode})
+            if visual:
+                yield event("visual", visual)
         except Exception as exc:  # noqa: BLE001
-            yield f"data: {json.dumps({'error': f'{mode.title()} query failed: {exc}'})}\n\n"
-        yield f"data: {json.dumps({'done': True, 'mode': mode})}\n\n"
+            yield event("error", {"message": f"{mode.title()} query failed: {exc}", "mode": mode})
+        yield event("done", {"mode": mode})
         return
-    system = SYSTEM_PROMPT + "\n\n" + snapshot()
+    yield event("progress", {"stage": "ground", "label": "Grounding in the current data summary…", "percent": 32})
+    system = SYSTEM_PROMPT + "\n\n" + await asyncio.to_thread(snapshot)
+    yield event("progress", {"stage": "generate", "label": "Generating the answer…", "percent": 58})
     try:
         async for tok in _provider_stream(system, message):
-            yield f"data: {json.dumps({'token': tok})}\n\n"
+            yield event("token", {"token": tok, "mode": "assistant"})
     except Exception as e:  # noqa: BLE001
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
-    yield f"data: {json.dumps({'done': True})}\n\n"
+        yield event("error", {"message": str(e), "mode": "assistant"})
+    yield event("done", {"mode": "assistant"})
 
 
 # --- text-to-SQL (non-streaming) -------------------------------------------

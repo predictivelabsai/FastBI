@@ -13,6 +13,7 @@ import httpx
 from fasthtml.common import *
 
 import db
+from web.layout import generation_progress
 
 MAX_SCHEMA_BYTES = 2 * 1024 * 1024
 MAX_REPORT_BYTES = 8 * 1024 * 1024
@@ -281,6 +282,7 @@ def migrations_workspace(message="", error=False):
         P("FastBI reads available report text, filenames, visual artefacts, migration instructions, and the selected schema to generate an editable governed dashboard.", cls="sub"),
         Button("Generate dashboard", type="submit", cls="btn primary"),
         method="post", action="/migrations/run", enctype="multipart/form-data", style="display:grid;gap:12px;",
+        onsubmit="document.getElementById('migration-generation-progress').classList.add('htmx-request')",
     )
     rows = [Tr(Td(item["source_tool"]), Td(item["file_name"]), Td(item.get("integration_name") or "Local warehouse"),
                Td(A("Open dashboard →", href=f"/dashboards/{item['dashboard_id']}"))) for item in history]
@@ -288,7 +290,9 @@ def migrations_workspace(message="", error=False):
         Div(Div(H1("Migrations"), P("Turn Power BI, Tableau, Looker, and visual report artefacts into editable FastBI dashboards.", cls="sub")),
             Div(A("Manage integrations →", href="/integrations", cls="btn")), cls="page-title"),
         _flash(message, error),
-        Div(Div(H3("Generate a migrated dashboard"), cls="card-header"), form, cls="card"),
+        Div(Div(H3("Generate a migrated dashboard"), cls="card-header"), form,
+            generation_progress("migration-generation-progress", "Reading the report and generating dashboard structure…",
+                                "FastBI is matching visuals, measures, and schema."), cls="card"),
         Div(Div(H3("Migration history"), cls="card-header"),
             Table(Thead(Tr(Th("Source"), Th("Artefact"), Th("Schema"), Th("Result"))), Tbody(*rows), cls="tbl") if rows else P("No reports migrated yet.", cls="sub"), cls="card"),
     )
