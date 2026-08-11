@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fasthtml.common import (
-    Div, H1, H3, H4, P, Span, A, Button, Form, Input, Title, Link, Script, Style, NotStr,
+    Div, H1, H3, H4, P, Span, A, Button, Form, Input, Select, Option, Title, Link, Script, Style, NotStr,
 )
 
 LAYOUT_CSS = """
@@ -25,8 +25,7 @@ a{color:var(--accent);text-decoration:none;} a:hover{text-decoration:underline;}
 .topbar{grid-area:top;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border);}
 .brand{font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px;font-size:16px;}
 .brand-dot{width:11px;height:11px;background:var(--accent);border-radius:3px;display:inline-block;}
-.brand-wordmark{display:inline-flex;align-items:baseline;gap:0;font-weight:800;}
-.brand-wordmark .brand-bi{color:var(--accent);font-weight:700;letter-spacing:.5px;}
+.brand-wordmark{font-weight:800;color:var(--text);}
 .env-pill{background:var(--accent-light);color:var(--accent-hover);padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
 .topbar .actions{display:flex;gap:10px;align-items:center;}
 .left-pane{grid-area:left;background:var(--surface);border-right:1px solid var(--border);padding:12px 0;overflow-y:auto;}
@@ -88,6 +87,7 @@ table.tbl td.num,table.tbl th.num{text-align:right;font-variant-numeric:tabular-
 .chat-input-row input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light);}
 .chat-send-btn{display:inline-flex;align-items:center;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:0 16px;font-weight:600;font-size:13px;cursor:pointer;}
 .chat-send-btn:disabled{background:var(--text-mute);cursor:not-allowed;}
+.chat-mode{padding:0 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-dim);font-size:12px;}
 .chat-empty-hint{color:var(--text-mute);font-size:12.5px;line-height:1.5;text-align:center;padding:18px 14px;}
 .sample-cards{padding:.4rem 1rem .8rem;background:var(--surface);border-top:1px solid var(--border);}
 .sample-cards-label{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--text-mute);margin-bottom:6px;}
@@ -105,10 +105,13 @@ NAV_ITEMS = [
     ("ANALYZE", [("dashboards", "Dashboards", "📈", "/dashboards"),
                  ("queries", "Queries & Charts", "🧩", "/queries"),
                  ("builder", "Query Builder", "🧱", "/build"),
-                 ("sqllab", "SQL Lab + Ask AI", "🧠", "/sql")]),
+                 ("sqllab", "SQL Lab + Ask AI", "🧠", "/sql"),
+                 ("graph", "Graph Explorer", "🕸️", "/graph"),
+                 ("cypher", "Cypher Lab + Ask AI", "◇", "/cypher")]),
     ("DATA", [("sources", "Data Source", "🗄️", "/sources"),
               ("integrations", "Integrations", "🔌", "/integrations"),
-              ("migrations", "Migrations", "↗", "/migrations")]),
+              ("migrations", "Migrations", "↗", "/migrations"),
+              ("ontologies", "Ontologies", "◎", "/ontologies")]),
     ("HELP", [("guide", "User Guide", "📖", "/guide"),
               ("developers", "Developers", "⌘", "/developers")]),
 ]
@@ -125,8 +128,7 @@ def topbar(env, user_email):
         Span(env, cls="env-pill"),
         Span(user_email or "", style="color:var(--text-mute);font-size:12px;") if user_email else None,
         A("Logout", href="/logout", cls="btn") if user_email else None, cls="actions")
-    return Div(Div(Span(cls="brand-dot"),
-                   Span("Fast", Span("BI", cls="brand-bi"), cls="brand-wordmark"), cls="brand"),
+    return Div(Div(Span(cls="brand-dot"), Span("FastBI", cls="brand-wordmark"), cls="brand"),
                right, cls="topbar")
 
 
@@ -154,7 +156,10 @@ def right_pane_chat(thread_id):
         Div(Div(P("Ask about your metrics — or use /tables /metrics /help. For SQL generation, use the SQL Lab.",
                   cls="chat-empty-hint"), id="chat-body", cls="chat-body"),
             Form(Input(type="hidden", name="thread_id", value=thread_id, id="thread-id"),
-                 Div(Input(type="text", name="message", id="chat-input",
+                 Div(Select(Option("Auto", value="auto", selected=True), Option("SQL", value="sql"),
+                            Option("Graph", value="graph"), name="query_mode", id="chat-mode", cls="chat-mode",
+                            title="Choose automatic, relational, or graph execution"),
+                     Input(type="text", name="message", id="chat-input",
                            placeholder="Ask about your data or /metrics /help …", autocomplete="off"),
                      Button("Send", type="submit", cls="chat-send-btn", id="chat-send-btn"), cls="chat-input-row"),
                  onsubmit="return streamChat(event)", cls="chat-input"),
@@ -212,8 +217,9 @@ async function streamChat(ev){if(ev&&ev.preventDefault)ev.preventDefault();if(_s
   _streaming=true;var btn=document.getElementById('chat-send-btn');if(btn)btn.disabled=true;
   addBubble('user',_esc(msg));input.value='';
   var tid=(document.getElementById('thread-id')||{}).value||'';var bubble=null,acc='';showThinking();
+  var mode=(document.getElementById('chat-mode')||{}).value||'auto';
   try{var resp=await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:new URLSearchParams({message:msg,thread_id:tid})});
+    body:new URLSearchParams({message:msg,thread_id:tid,query_mode:mode})});
     if(!resp.ok){hideThinking();addBubble('assistant','Error: '+resp.status);_streaming=false;if(btn)btn.disabled=false;return false;}
     var reader=resp.body.getReader(),dec=new TextDecoder(),buf='';
     while(true){var r=await reader.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true});

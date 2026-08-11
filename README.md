@@ -4,7 +4,8 @@
 [FastHTML](https://fastht.ml) — a server-side, HTMX-driven port of the core of
 [Frappe Insights](https://github.com/frappe/insights). Python-first, no
 JavaScript framework: a synthetic data warehouse, saved queries that render
-**Plotly** charts, dashboards, a SQL lab, and an **AI text-to-SQL** assistant.
+**Plotly** charts, dashboards, SQL and Cypher labs, and a conversational AI
+assistant that routes questions to **text-to-SQL** or **text-to-Cypher**.
 
 Live at **[fastbi.org](https://fastbi.org)**.
 
@@ -40,8 +41,11 @@ local password sign-in, or configure Google SSO. Rebuild the warehouse with
 docker compose up --build      # http://localhost:5008
 ```
 
-`Dockerfile` (python:3.12-slim, port 5008) seeds on first boot;
-`docker-compose.yml` mounts a `fastbi-data` volume at `/data`.
+`Dockerfile` (python:3.12-slim, port 5008) seeds on first boot.
+`docker-compose.yml` mounts FastBI data at `/data` and starts the optional
+Neo4j 5.26 secondary store. Neo4j Browser and Bolt are bound to localhost at
+`http://127.0.0.1:7474` and `bolt://127.0.0.1:7687`; change the development
+password before exposing either port.
 
 ## Module tour
 
@@ -62,8 +66,15 @@ docker compose up --build      # http://localhost:5008
   definition, PDF, or screenshot artefacts and generate an editable dashboard
   grounded in a selected schema. With `XAI_API_KEY` configured, PNG/JPEG report
   screenshots are interpreted by the multimodal model before generation.
-- **AI Assistant** (right rail) — metric Q&A grounded in a live data summary;
-  slash-commands `/metrics` `/tables` `/top` work with **no API key**.
+- **Ontologies** (`/ontologies`) — administrators validate, preview, apply, and
+  roll back versioned JSON/YAML property-graph imports.
+- **Graph Explorer** (`/graph`) — interactive ontology visualisation with node
+  inspection and per-ontology filtering.
+- **Cypher Lab + Ask AI** (`/cypher`) — execute bounded read-only Cypher or turn
+  a relationship question into guarded Cypher and an interactive graph.
+- **AI Assistant** (right rail) — automatic SQL/Graph routing by default, with
+  explicit Auto, SQL, and Graph controls. Slash-commands `/metrics`, `/tables`,
+  and `/top` work with **no API key**.
 
 ## AI text-to-SQL (the showcase)
 
@@ -87,16 +98,20 @@ still work — only AI generation is disabled.
 ```
 web_app.py        routes, auth, SQL-run + AI-SQL endpoints, SSE chat, boot
 db.py             warehouse + app schema, read-only run_sql() guard
+graph_db.py       optional Neo4j connection, ontology import, Cypher guard
 seed.py           synthetic retail star schema + saved queries/charts/dashboards
 web/charts.py     Plotly chart + result-table rendering
 web/layout.py     3-pane shell, CSS, chat JS
 web/views.py      page renderers
 web/integrations.py  schema import and report migration workflows
-web/ai.py         grounded chat, slash-commands, text_to_sql()
+web/graph_views.py   ontology, graph explorer, and Cypher UI
+web/graph_ai.py      schema-grounded text-to-Cypher
+web/ai.py         grounded chat, routing, text-to-SQL and text-to-Cypher
 ```
 
 See **[SKILLS.md](SKILLS.md)** for the capability reference + migration playbook,
-and **[docs/ROADMAP.md](docs/ROADMAP.md)** for the comparison vs Frappe Insights.
+**[docs/GRAPH_DB.md](docs/GRAPH_DB.md)** for the graph contract and deployment
+runbook, and **[docs/ROADMAP.md](docs/ROADMAP.md)** for the comparison vs Frappe Insights.
 
 ## Licence
 

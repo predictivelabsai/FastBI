@@ -1,0 +1,70 @@
+ontology:
+  id: retail-demo
+  name: Retail analytics ontology
+  version: "1.0"
+  description: A compact relationship model for the synthetic FastBI warehouse.
+
+nodes:
+  - id: customer
+    type: OntologyClass
+    label: Customer
+    properties:
+      description: A person or organisation purchasing products.
+  - id: order
+    type: OntologyClass
+    label: Order
+    properties:
+      description: A commercial transaction recorded by FastBI.
+  - id: product
+    type: OntologyClass
+    label: Product
+    properties:
+      description: An item sold through a retail channel.
+  - id: region
+    type: OntologyClass
+    label: Region
+    properties:
+      description: A geographic sales territory.
+  - id: channel
+    type: OntologyClass
+    label: Channel
+    properties:
+      description: The route through which an order was placed.
+  - id: revenue
+    type: Metric
+    label: Revenue
+    properties:
+      expression: SUM(order.revenue)
+      format: currency
+  - id: gross_margin
+    type: Metric
+    label: Gross margin
+    properties:
+      expression: SUM(order.revenue - order.cost)
+      format: currency
+
+edges:
+  - id: customer_places_order
+    from: customer
+    to: order
+    type: PLACES
+  - id: order_contains_product
+    from: order
+    to: product
+    type: CONTAINS_PRODUCT
+  - id: customer_belongs_to_region
+    from: customer
+    to: region
+    type: BELONGS_TO
+  - id: order_uses_channel
+    from: order
+    to: channel
+    type: USES_CHANNEL
+  - id: revenue_measures_order
+    from: revenue
+    to: order
+    type: MEASURES
+  - id: margin_measures_order
+    from: gross_margin
+    to: order
+    type: MEASURES

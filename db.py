@@ -168,6 +168,21 @@ CREATE TABLE IF NOT EXISTS migration_reports (
     status        TEXT NOT NULL DEFAULT 'generated',
     created       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS graph_ontology_imports (
+    id             INTEGER PRIMARY KEY,
+    ontology_id    TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    version        TEXT NOT NULL,
+    source_file    TEXT NOT NULL,
+    content_hash   TEXT NOT NULL,
+    payload_json   TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'staged',
+    created_by     TEXT NOT NULL,
+    created        TEXT NOT NULL DEFAULT (datetime('now')),
+    applied        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_graph_imports_ontology
+    ON graph_ontology_imports(ontology_id, id DESC);
 """
 
 
@@ -224,6 +239,63 @@ def save_migration(source_tool: str, file_name: str, integration_id: int | None,
             (source_tool, file_name, integration_id, instructions, summary, dashboard_id),
         )
         return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+# --- graph ontology import history -----------------------------------------
+
+def stage_graph_import(ontology_id: str, name: str, version: str, source_file: str,
+                       content_hash: str, payload_json: str, created_by: str) -> int:
+    with cursor() as conn:
+        conn.execute(
+            """INSERT INTO graph_ontology_imports
+               (ontology_id,name,version,source_file,content_hash,payload_json,created_by)
+               VALUES (?,?,?,?,?,?,?)""",
+            (ontology_id, name, version, source_file, content_hash, payload_json, created_by),
+        )
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def graph_import(import_id: int):
+    return one("SELECT * FROM graph_ontology_imports WHERE id=?", (import_id,))
+
+
+def graph_imports():
+    return rows(
+        """SELECT id,ontology_id,name,version,source_file,content_hash,status,
+                  created_by,created,applied
+           FROM graph_ontology_imports ORDER BY id DESC"""
+    )
+
+
+def activate_graph_import(import_id: int) -> None:
+    with cursor() as conn:
+        row = conn.execute(
+            "SELECT ontology_id FROM graph_ontology_imports WHERE id=?", (import_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("Unknown graph ontology import.")
+        conn.execute(
+            "UPDATE graph_ontology_imports SET status='superseded' "
+            "WHERE ontology_id=? AND status='active' AND id<>?", (row[0], import_id),
+        )
+        conn.execute(
+            "UPDATE graph_ontology_imports SET status='active',applied=datetime('now') WHERE id=?",
+            (import_id,),
+        )
+
+
+def fail_graph_import(import_id: int) -> None:
+    with cursor() as conn:
+        conn.execute("UPDATE graph_ontology_imports SET status='failed' WHERE id=?", (import_id,))
+
+
+def previous_graph_import(ontology_id: str, current_id: int):
+    return one(
+        """SELECT * FROM graph_ontology_imports
+           WHERE ontology_id=? AND id<>? AND status IN ('active','superseded')
+           ORDER BY id DESC LIMIT 1""",
+        (ontology_id, current_id),
+    )
 
 
 # --- save / delete saved queries (transactional) ----------------------------

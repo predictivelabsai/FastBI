@@ -16,6 +16,7 @@ import json
 import secrets
 import uuid
 import logging
+from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -28,8 +29,9 @@ from starlette.responses import StreamingResponse, Response
 from starlette.responses import JSONResponse
 
 import db
+import graph_db
 from web.layout import page, LAYOUT_CSS
-from web import views, ai, integrations
+from web import views, ai, integrations, graph_ai, graph_views
 from web.landing import landing_page, integrations_landing_page
 from web.seo import register_seo_routes
 from web.developer import developer_page
@@ -44,6 +46,9 @@ VALID_PASSWORD = os.getenv("FASTBI_ADMIN_PASSWORD", os.getenv("FASTINSIGHTS_ADMI
 ENV_LABEL = os.getenv("FASTBI_ENV_LABEL", os.getenv("FASTINSIGHTS_ENV_LABEL", "FastBI"))
 SECRET = os.getenv("FASTBI_SECRET", os.getenv("FASTINSIGHTS_SECRET", secrets.token_hex(32)))
 PORT = int(os.getenv("FASTBI_PORT", os.getenv("FASTINSIGHTS_PORT", "5008")))
+GRAPH_ADMIN_EMAILS = {
+    email.strip().lower() for email in os.getenv("FASTBI_GRAPH_ADMIN_EMAILS", "").split(",") if email.strip()
+} | {VALID_EMAIL.strip().lower()}
 
 app, rt = fast_app(live=False, pico=False, secret_key=SECRET, hdrs=[Style(LAYOUT_CSS)])
 app.mount("/api", api)
@@ -57,6 +62,15 @@ def swagger_schema():
 @rt("/developers", methods=["GET"])
 def developers():
     return developer_page()
+
+
+@rt("/healthz", methods=["GET"])
+def healthz():
+    graph = graph_db.health()
+    return JSONResponse({
+        "status": "ok" if (not graph["enabled"] or graph.get("connected")) else "degraded",
+        "product": "FastBI", "database": "ok", "graph": graph,
+    })
 
 
 @rt("/integrations", methods=["GET"])
@@ -81,6 +95,128 @@ def integration_import(session, name: str = "", provider: str = "", url: str = "
     except integrations.IntegrationError as exc:
         session["integrations_flash"] = {"message": str(exc), "error": True}
     return RedirectResponse("/integrations", status_code=303)
+
+
+def _is_graph_admin(session) -> bool:
+    return (_user(session) or "").strip().lower() in GRAPH_ADMIN_EMAILS
+
+
+@rt("/ontologies", methods=["GET"])
+def ontologies_page(session, preview: int = 0):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    flash = session.pop("graph_flash", None) or {}
+    staged = db.graph_import(preview) if preview and _is_graph_admin(session) else None
+    return _guard(session, "ontologies", lambda: graph_views.ontology_workspace(
+        db.graph_imports(), staged, _is_graph_admin(session),
+        flash.get("message", ""), flash.get("error", False),
+    ))
+
+
+@rt("/ontologies/preview", methods=["POST"])
+async def ontology_preview(session, request):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    if not _is_graph_admin(session):
+        return Response("Graph administrator access required.", status_code=403)
+    try:
+        form = await request.form()
+        upload = form.get("ontology")
+        filename = Path(getattr(upload, "filename", "") or "ontology.yaml").name
+        if Path(filename).suffix.lower() not in {".json", ".yaml", ".yml"}:
+            raise graph_db.OntologyError("Upload a .json, .yaml, or .yml ontology file.")
+        raw = await upload.read(graph_db.MAX_ONTOLOGY_BYTES + 1)
+        payload = graph_db.parse_ontology(raw, filename)
+        meta = payload["ontology"]
+        import_id = db.stage_graph_import(
+            meta["id"], meta["name"], meta["version"], filename,
+            graph_db.ontology_hash(payload), graph_db.ontology_json(payload), _user(session),
+        )
+        return RedirectResponse(f"/ontologies?preview={import_id}", status_code=303)
+    except (graph_db.OntologyError, AttributeError) as exc:
+        session["graph_flash"] = {"message": str(exc), "error": True}
+        return RedirectResponse("/ontologies", status_code=303)
+
+
+@rt("/ontologies/{import_id}/apply", methods=["POST"])
+def ontology_apply(session, import_id: int):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    if not _is_graph_admin(session):
+        return Response("Graph administrator access required.", status_code=403)
+    item = db.graph_import(import_id)
+    if not item:
+        return Response("Ontology import not found.", status_code=404)
+    try:
+        result = graph_db.import_ontology(json.loads(item["payload_json"]))
+        db.activate_graph_import(import_id)
+        session["graph_flash"] = {
+            "message": f"Applied {item['name']}: {result['nodes']} nodes and {result['edges']} relationships."
+        }
+    except Exception as exc:  # noqa: BLE001
+        db.fail_graph_import(import_id)
+        session["graph_flash"] = {"message": str(exc), "error": True}
+    return RedirectResponse("/ontologies", status_code=303)
+
+
+@rt("/ontologies/{import_id}/rollback", methods=["POST"])
+def ontology_rollback(session, import_id: int):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    if not _is_graph_admin(session):
+        return Response("Graph administrator access required.", status_code=403)
+    current = db.graph_import(import_id)
+    previous = db.previous_graph_import(current["ontology_id"], import_id) if current else None
+    if not previous:
+        session["graph_flash"] = {"message": "No earlier ontology version is available.", "error": True}
+    else:
+        try:
+            graph_db.import_ontology(json.loads(previous["payload_json"]))
+            db.activate_graph_import(previous["id"])
+            session["graph_flash"] = {"message": f"Rolled back to {previous['name']} {previous['version']}."}
+        except Exception as exc:  # noqa: BLE001
+            session["graph_flash"] = {"message": str(exc), "error": True}
+    return RedirectResponse("/ontologies", status_code=303)
+
+
+@rt("/graph", methods=["GET"])
+def graph_explorer_page(session, ontology: str = ""):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    try:
+        payload = graph_db.explorer_payload(ontology or None)
+        ontologies = graph_db.list_ontologies()
+    except graph_db.GraphError:
+        payload, ontologies = None, []
+    return _guard(session, "graph", lambda: graph_views.graph_explorer(payload, ontologies, ontology))
+
+
+@rt("/cypher", methods=["GET"])
+def cypher_lab_page(session):
+    return _guard(session, "cypher", graph_views.cypher_lab)
+
+
+@rt("/cypher/run", methods=["POST"])
+def cypher_run(session, cypher: str = ""):
+    if not _user(session):
+        return Response("Unauthorized", status_code=401)
+    try:
+        return graph_views.cypher_result(graph_db.run_cypher(cypher))
+    except (graph_db.GraphError, graph_db.CypherError) as exc:
+        return graph_views.cypher_error(str(exc))
+
+
+@rt("/cypher/ask", methods=["POST"])
+def cypher_ask(session, question: str = ""):
+    if not _user(session):
+        return Response("Unauthorized", status_code=401)
+    if not (question or "").strip():
+        return graph_views.cypher_error("Type a graph question first.")
+    try:
+        cypher, params, note = graph_ai.text_to_cypher(question.strip())
+        return graph_views.cypher_result(graph_db.run_cypher(cypher, params), note)
+    except (graph_db.GraphError, graph_db.CypherError, RuntimeError) as exc:
+        return graph_views.cypher_error(str(exc))
 
 
 @rt("/migrations", methods=["GET"])
@@ -352,6 +488,12 @@ def get(session):
 chart, the SQL, and the full result table.</p></div>
 <div class='card'><h3>SQL Lab + Ask AI</h3><p>Run read-only SQL against the warehouse, or describe what you want and
 let the AI generate the SQL, run it, and chart it. The schema is shown alongside.</p></div>
+<div class='card'><h3>Ontologies</h3><p>Graph administrators can validate and preview a versioned JSON/YAML ontology,
+then apply it atomically to Neo4j or roll back to the previous active version.</p></div>
+<div class='card'><h3>Graph Explorer</h3><p>Explore active ontology nodes and relationships visually, filter by ontology,
+and click a node to inspect its properties.</p></div>
+<div class='card'><h3>Cypher Lab + Ask AI</h3><p>Run bounded read-only Cypher, or ask a relationship question and let AI generate
+schema-grounded Cypher. The right-rail selector can route conversational questions automatically or force SQL/Graph.</p></div>
 <div class='card'><h3>Data Source</h3><p>Browse the synthetic warehouse tables with row counts and samples.</p></div>
 """)))
     return _guard(session, "guide", body)
@@ -364,7 +506,7 @@ def get(session):
 
 
 @rt("/chat/stream")
-async def post(session, message: str = "", thread_id: str = ""):
+async def post(session, message: str = "", thread_id: str = "", query_mode: str = "auto"):
     if not _user(session):
         return Response("Unauthorized", status_code=401)
     message = (message or "").strip()
@@ -377,7 +519,7 @@ async def post(session, message: str = "", thread_id: str = ""):
             conn.execute("INSERT INTO chat_messages(thread_id,role,content,created) VALUES(?,?,?,datetime('now'))",
                          (tid, "user", message))
         full = []
-        async for chunk in ai.stream_chat(message):
+        async for chunk in ai.stream_chat(message, query_mode):
             if chunk.startswith("data: "):
                 try:
                     tok = json.loads(chunk[6:]).get("token")
@@ -401,7 +543,28 @@ def _ensure_db():
     db.init_app_schema()
 
 
+def _ensure_graph():
+    if not graph_db.configured():
+        return
+    try:
+        graph_db.ensure_schema()
+        if os.getenv("FASTBI_GRAPH_AUTOSEED", "0").lower() in {"1", "true", "yes"} and not graph_db.list_ontologies():
+            source = Path(__file__).parent / "examples" / "retail-ontology.yaml"
+            payload = graph_db.parse_ontology(source.read_bytes(), source.name)
+            result = graph_db.import_ontology(payload)
+            meta = payload["ontology"]
+            import_id = db.stage_graph_import(
+                meta["id"], meta["name"], meta["version"], source.name,
+                graph_db.ontology_hash(payload), graph_db.ontology_json(payload), "system",
+            )
+            db.activate_graph_import(import_id)
+            logger.info("Seeded Neo4j ontology: %s nodes, %s relationships", result["nodes"], result["edges"])
+    except Exception as exc:  # optional graph failure must not break relational BI
+        logger.warning("Neo4j initialization deferred (%s)", type(exc).__name__)
+
+
 _ensure_db()
+_ensure_graph()
 
 
 register_seo_routes(app)

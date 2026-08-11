@@ -22,7 +22,10 @@ credentials in the ignored `.env`, or use Google SSO.
 | Data Source | `/sources` | warehouse tables, row counts, samples |
 | Integrations | `/integrations` | guarded HTTP(S) schema/catalogue import |
 | Migrations | `/migrations` | report artefact upload → editable dashboard |
-| AI Assistant | `/ai` | metric chat (right rail) |
+| Ontologies | `/ontologies` | admin-only JSON/YAML graph import, versions, rollback |
+| Graph Explorer | `/graph` | interactive ontology relationship visualisation |
+| Cypher Lab + Ask AI | `/cypher` | guarded Cypher and schema-grounded text-to-Cypher |
+| AI Assistant | `/ai` | metric chat with Auto / SQL / Graph routing (right rail) |
 
 ### Warehouse & safe SQL (`db.py`)
 
@@ -43,7 +46,20 @@ result grid. Charts re-init after HTMX swaps via a `data-plot` re-eval hook in
 - **text_to_sql(question)** — sends the question + live schema to the LLM, parses
   one SELECT out, returns it for `run_sql`. Used by `/sql/ask`.
 - **Grounded chat** — streamed, with a live data summary in the system prompt.
+- **Automatic query routing** — SQL for analytical facts and Neo4j for ontology
+  relationships; users can force SQL or Graph from the chat selector.
 - **Slash-commands** (no key): `/metrics`, `/tables`, `/top region|category|customer`.
+
+### Optional graph engine (`graph_db.py`, `web/graph_ai.py`)
+
+- SQLite stays the system of record; self-hosted Neo4j is an optional secondary
+  store for relationships and ontology exploration.
+- Admins stage and validate a bounded JSON/YAML property graph before applying
+  it atomically. Every import is hashed, versioned, and eligible for rollback.
+- Cypher is restricted to one comment-free `MATCH`/`OPTIONAL MATCH` statement,
+  blocks writes and procedures, enforces a row limit, and runs with a timeout.
+- Text-to-Cypher uses the active graph schema and structured parameters. The
+  model only proposes a query; FastBI validates and executes it separately.
 
 ### Integrations and migrations (`web/integrations.py`)
 

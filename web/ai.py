@@ -61,6 +61,51 @@ def _table(headers, rows_):
     return "\n".join(out)
 
 
+def route_mode(question: str, requested: str = "auto") -> str:
+    """Choose the conversational execution path; explicit modes always win."""
+    requested = (requested or "auto").strip().lower()
+    if requested in {"sql", "graph"}:
+        return requested
+    text = (question or "").lower()
+    graph_terms = (
+        "ontology", "relationship", "related", "connected", "connection", "path between",
+        "depends on", "class", "node", "graph", "upstream", "downstream", "measures",
+    )
+    if any(term in text for term in graph_terms):
+        try:
+            import graph_db
+            if graph_db.configured():
+                return "graph"
+        except Exception:
+            pass
+    sql_terms = (
+        "revenue", "margin", "orders", "customers", "monthly", "trend", "average",
+        "total", "top", "sales", "channel", "region", "category", "product",
+    )
+    return "sql" if any(term in text for term in sql_terms) else "assistant"
+
+
+def _sql_markdown(question: str) -> str:
+    sql, _note = text_to_sql(question)
+    cols, rows_ = db.run_sql(sql, limit=50)
+    lines = ["**SQL answer** — generated and executed against the read-only warehouse.", ""]
+    if cols and rows_:
+        lines.append(_table(cols, [[str(value) for value in row] for row in rows_[:12]]))
+    else:
+        lines.append("No matching rows were found.")
+    lines.extend(["", "```sql", sql, "```", "Open **SQL Lab + Ask AI** for the chart and full result."])
+    return "\n".join(lines)
+
+
+def _graph_markdown(question: str) -> str:
+    import graph_db
+    from web import graph_ai
+
+    cypher, params, explanation = graph_ai.text_to_cypher(question)
+    result = graph_db.run_cypher(cypher, params)
+    return graph_ai.markdown_answer(question, result, explanation)
+
+
 def handle_command(text):
     if not text.startswith("/"):
         return None
@@ -95,11 +140,20 @@ def handle_command(text):
 
 # --- streaming chat ---------------------------------------------------------
 
-async def stream_chat(message):
+async def stream_chat(message, query_mode: str = "auto"):
     cmd = handle_command(message)
     if cmd is not None:
         yield f"data: {json.dumps({'token': cmd})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
+        return
+    mode = route_mode(message, query_mode)
+    if mode in {"sql", "graph"}:
+        try:
+            answer = _sql_markdown(message) if mode == "sql" else _graph_markdown(message)
+            yield f"data: {json.dumps({'token': answer, 'mode': mode})}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"data: {json.dumps({'error': f'{mode.title()} query failed: {exc}'})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'mode': mode})}\n\n"
         return
     system = SYSTEM_PROMPT + "\n\n" + snapshot()
     try:
