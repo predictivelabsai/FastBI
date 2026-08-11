@@ -170,10 +170,13 @@ def right_pane_chat(thread_id):
 
 def page(active, env, user_email, thread_id, *content, right_override=None):
     right = right_override if right_override is not None else right_pane_chat(thread_id)
+    graph_library = (Script(src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js")
+                     if active in {"graph", "cypher"} else None)
     return (Title("FastBI"),
             Link(rel="icon", type="image/svg+xml", href="/static/favicon.svg"),
             Script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"),
             Script(src="https://cdn.plot.ly/plotly-2.35.2.min.js"),
+            graph_library,
             Style(LAYOUT_CSS),
             Div(topbar(env, user_email), left_pane(active), Div(*content, cls="center-pane"), right,
                 Div(NotStr("&lsaquo; AI Assistant"), id="copilot-reopen", onclick="toggleCopilot()"), cls="app"),
@@ -229,6 +232,8 @@ async function streamChat(ev){if(ev&&ev.preventDefault)ev.preventDefault();if(_s
         else if(p.error){hideThinking();addBubble('assistant','⚠ '+p.error);}}}
   }catch(e){hideThinking();addBubble('assistant','⚠ '+e);}
   hideThinking();_streaming=false;if(btn)btn.disabled=false;return false;}
-document.body.addEventListener('htmx:afterSwap',function(){_scroll();
-  document.querySelectorAll('script[data-plot]').forEach(function(s){try{eval(s.textContent);}catch(e){}});});
+document.body.addEventListener('htmx:afterSwap',function(ev){_scroll();
+  var root=(ev.detail&&ev.detail.target)||document;
+  root.querySelectorAll('script[data-plot]').forEach(function(s){try{eval(s.textContent);}catch(e){}});
+  root.querySelectorAll('script[data-network]').forEach(function(s){try{eval(s.textContent);}catch(e){console.error('Graph render failed',e);}});});
 """

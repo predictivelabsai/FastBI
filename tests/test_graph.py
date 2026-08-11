@@ -8,6 +8,7 @@ import db
 import graph_db
 import seed
 from web import ai, graph_ai, graph_views
+from web.layout import LAYOUT_JS
 
 
 VALID = b"""
@@ -104,7 +105,8 @@ class GraphTests(unittest.TestCase):
             "edges": [], "stats": "1 node · 0 relationships",
         }
         html = "".join(str(item) for item in graph_views.graph_explorer(payload, [], ""))
-        self.assertIn("vis-network@9.1.9", html)
+        self.assertIn('data-network="1"', html)
+        self.assertIn("script[data-network]", LAYOUT_JS)
         self.assertIn("ontology-network", html)
         self.assertIn("Graph Explorer", html)
 

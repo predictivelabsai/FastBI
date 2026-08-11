@@ -10,9 +10,6 @@ import graph_db
 from web.views import _title
 
 
-VIS_NETWORK = "https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"
-
-
 def _safe_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c")
 
@@ -52,12 +49,11 @@ def _network(payload: dict[str, Any], element_id: str, height: str = "620px") ->
 }})();
 """
     return (
-        Script(src=VIS_NETWORK),
         Div(id=element_id, style=f"height:{height};border:1px solid var(--border);border-radius:10px;background:#fbfcff;"),
         Div(Div(H3("Selected node"), cls="card-header"),
             Pre("Click a node to inspect its properties.", id=f"{element_id}-detail",
                 style="white-space:pre-wrap;margin:0;font-size:12px;overflow:auto;max-height:220px;"), cls="card"),
-        Script(NotStr(script)),
+        Script(NotStr(script), **{"data-network": "1"}),
     )
 
 
