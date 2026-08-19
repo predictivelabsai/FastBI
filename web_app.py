@@ -29,10 +29,11 @@ from starlette.responses import StreamingResponse, Response
 from starlette.responses import JSONResponse
 
 import db
+import rag
 import graph_db
 from web.layout import page, main_chat, LAYOUT_CSS
 from web.sse import parse as parse_sse
-from web import views, ai, integrations, graph_ai, graph_views
+from web import views, ai, integrations, graph_ai, graph_views, rag_views
 from web.landing import landing_page, integrations_landing_page
 from web.seo import register_seo_routes
 from web.developer import developer_page
@@ -41,6 +42,7 @@ from web.api import api
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("fastbi")
+VERSION = (Path(__file__).parent / "VERSION").read_text().strip()
 
 VALID_EMAIL = os.getenv("FASTBI_ADMIN_EMAIL", os.getenv("FASTINSIGHTS_ADMIN_EMAIL", "admin@fastbi.example"))
 VALID_PASSWORD = os.getenv("FASTBI_ADMIN_PASSWORD", os.getenv("FASTINSIGHTS_ADMIN_PASSWORD", ""))
@@ -70,8 +72,52 @@ def healthz():
     graph = graph_db.health()
     return JSONResponse({
         "status": "ok" if (not graph["enabled"] or graph.get("connected")) else "degraded",
-        "product": "FastBI", "database": "ok", "graph": graph,
+        "product": "FastBI", "version": VERSION, "database": "ok", "graph": graph, "rag": rag.health(),
     })
+
+
+@rt("/graphrag", methods=["GET"])
+def graphrag_page(session):
+    if not _user(session):
+        return RedirectResponse("/login", status_code=303)
+    flash = session.pop("rag_flash", None) or {}
+    return _guard(session, "graphrag", lambda: rag_views.workspace(flash.get("message", ""), flash.get("error", False)))
+
+
+@rt("/graphrag/ask", methods=["POST"])
+def graphrag_ask(session, question: str = "", approach: str = "graphrag"):
+    if not _user(session):
+        return Response("Unauthorized", status_code=401)
+    try:
+        approaches = ("graphrag", "postgres", "faiss") if approach == "compare" else (approach,)
+        return rag_views.answer_results([rag.answer(question.strip(), item) for item in approaches])
+    except Exception as exc:  # noqa: BLE001
+        return graph_views.cypher_error(str(exc))
+
+
+@rt("/graphrag/rebuild", methods=["POST"])
+def graphrag_rebuild(session):
+    if not _is_graph_admin(session):
+        return Response("Graph administrator access required.", status_code=403)
+    try:
+        result = rag.rebuild(include_database=True)
+        session["rag_flash"] = {"message": f"Indexed {result['documents']} changed documents and {result['chunks']} chunks."}
+    except Exception as exc:  # noqa: BLE001
+        session["rag_flash"] = {"message": str(exc), "error": True}
+    return RedirectResponse("/graphrag", status_code=303)
+
+
+@rt("/graphrag/evals/generate", methods=["POST"])
+def graphrag_eval_generate(session):
+    if not _is_graph_admin(session):
+        return Response("Graph administrator access required.", status_code=403)
+    try:
+        dataset = rag.generate_benchmark()
+        result = rag.run_evaluation(dataset["dataset_id"])
+        session["rag_flash"] = {"message": "Synthetic comparative evaluation complete: " + json.dumps(result["summary"])}
+    except Exception as exc:  # noqa: BLE001
+        session["rag_flash"] = {"message": str(exc), "error": True}
+    return RedirectResponse("/graphrag", status_code=303)
 
 
 @rt("/integrations", methods=["GET"])

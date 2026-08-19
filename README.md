@@ -1,5 +1,7 @@
 # FastBI
 
+Current release: **0.2.0**. See [docs/change_log.md](docs/change_log.md).
+
 **FastBI** is an open-source **business-intelligence tool** built with
 [FastHTML](https://fastht.ml) — a server-side, HTMX-driven port of the core of
 [Frappe Insights](https://github.com/frappe/insights). Python-first, no
@@ -107,6 +109,8 @@ web/integrations.py  schema import and report migration workflows
 web/graph_views.py   ontology, graph explorer, and Cypher UI
 web/graph_ai.py      schema-grounded text-to-Cypher
 web/ai.py         grounded chat, routing, text-to-SQL and text-to-Cypher
+rag.py            pgvector, FAISS, Neo4j GraphRAG, ingestion and comparative evals
+web/rag_views.py  GraphRAG chat and evaluation workspace
 ```
 
 See **[SKILLS.md](SKILLS.md)** for the capability reference + migration playbook,

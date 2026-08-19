@@ -18,6 +18,8 @@ __pycache__/
 .playwright-cli/
 output/playwright/
 /tmp/
+data/*.faiss
+data/*.faiss.json
 
 # OS
 .DS_Store

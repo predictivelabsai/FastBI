@@ -140,6 +140,7 @@ NAV_ITEMS = [
                  ("queries", "Queries & Charts", "🧩", "/queries"),
                  ("builder", "Query Builder", "🧱", "/build"),
                  ("sqllab", "SQL Lab + Ask AI", "🧠", "/sql"),
+                 ("graphrag", "GraphRAG Chat", "✦", "/graphrag"),
                  ("graph", "Graph Explorer", "🕸️", "/graph"),
                  ("cypher", "Cypher Lab + Ask AI", "◇", "/cypher")]),
     ("DATA", [("sources", "Data Source", "🗄️", "/sources"),
@@ -242,7 +243,7 @@ def page(active, env, user_email, thread_id, *content, right_override=None):
     show_copilot = active == "dashboards"
     right = right_override if right_override is not None else (right_pane_chat(thread_id) if show_copilot else None)
     graph_library = (Script(src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js")
-                     if active in {"graph", "cypher", "ai"} else None)
+                     if active in {"graph", "cypher", "ai", "graphrag"} else None)
     return (Title("FastBI"),
             Link(rel="icon", type="image/svg+xml", href="/static/favicon.svg"),
             Script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"),
