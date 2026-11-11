@@ -33,16 +33,18 @@ import rag
 import graph_db
 from web.layout import page, main_chat, LAYOUT_CSS
 from web.sse import parse as parse_sse
-from web import views, ai, integrations, graph_ai, graph_views, rag_views
+from web import views, ai, integrations, graph_ai, graph_views, rag_views, ai_gate, byok, quota
 from web.landing import landing_page, integrations_landing_page
 from web.seo import register_seo_routes
 from web.developer import developer_page
 from web import account_auth, google_auth, suite_auth
 from web.api import api
+from version import read_version, version_label
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("fastbi")
-VERSION = (Path(__file__).parent / "VERSION").read_text().strip()
+VERSION, VERSION_DATE = read_version()
+APP_VERSION = version_label()
 
 VALID_EMAIL = os.getenv("FASTBI_ADMIN_EMAIL", os.getenv("FASTINSIGHTS_ADMIN_EMAIL", "admin@fastbi.example"))
 VALID_PASSWORD = os.getenv("FASTBI_ADMIN_PASSWORD", os.getenv("FASTINSIGHTS_ADMIN_PASSWORD", ""))
@@ -85,13 +87,15 @@ def graphrag_page(session):
 
 
 @rt("/graphrag/ask", methods=["POST"])
-def graphrag_ask(session, question: str = "", approach: str = "graphrag"):
-    if not _user(session):
-        return Response("Unauthorized", status_code=401)
+def graphrag_ask(session, request, question: str = "", approach: str = "graphrag"):
+    denied = ai_gate.evaluate(request, session)
+    if denied:
+        return ai_gate.html_reject(denied)
     try:
         approaches = ("graphrag", "postgres", "faiss") if approach == "compare" else (approach,)
         return rag_views.answer_results([rag.answer(question.strip(), item) for item in approaches])
     except Exception as exc:  # noqa: BLE001
+        ai_gate.refund_if_guest(request, session, not bool(_user(session)))
         return graph_views.cypher_error(str(exc))
 
 
@@ -254,15 +258,17 @@ def cypher_run(session, cypher: str = ""):
 
 
 @rt("/cypher/ask", methods=["POST"])
-def cypher_ask(session, question: str = ""):
-    if not _user(session):
-        return Response("Unauthorized", status_code=401)
+def cypher_ask(session, request, question: str = ""):
     if not (question or "").strip():
         return graph_views.cypher_error("Type a graph question first.")
+    denied = ai_gate.evaluate(request, session)
+    if denied:
+        return ai_gate.html_reject(denied)
     try:
         cypher, params, note = graph_ai.text_to_cypher(question.strip())
         return graph_views.cypher_result(graph_db.run_cypher(cypher, params), note)
     except (graph_db.GraphError, graph_db.CypherError, RuntimeError) as exc:
+        ai_gate.refund_if_guest(request, session, not bool(_user(session)))
         return graph_views.cypher_error(str(exc))
 
 
@@ -493,15 +499,17 @@ def post(session, sql: str = ""):
 
 
 @rt("/sql/ask")
-def post(session, question: str = ""):
-    if not _user(session):
-        return Response("Unauthorized", status_code=401)
+def post(session, request, question: str = ""):
     question = (question or "").strip()
     if not question:
         return Div(P("Type a question first.", style="color:var(--text-mute);"), cls="card")
+    denied = ai_gate.evaluate(request, session)
+    if denied:
+        return Div(Div(NotStr(f"⚠ {denied['message']}"), cls="sql-result-err"), cls="card")
     try:
         sql, note = ai.text_to_sql(question)
     except Exception as e:  # noqa: BLE001
+        ai_gate.refund_if_guest(request, session, not bool(_user(session)))
         return Div(Div(NotStr(f"⚠ {e}"), cls="sql-result-err"), cls="card")
     return views.sql_result(sql, ai_note=note)
 
@@ -512,15 +520,61 @@ def get(session):
 
 
 @rt("/ai")
-def get(session):
-    if not _user(session):
-        return RedirectResponse("/login", status_code=303)
+def get(session, request):
     thread_id = _thread(session)
     history = db.rows(
         "SELECT role,content,created FROM chat_messages WHERE thread_id=? ORDER BY id LIMIT 50",
         (thread_id,),
     )
-    return page("ai", ENV_LABEL, _user(session), thread_id, main_chat(thread_id, history))
+    email = _user(session) or ""
+    has_key = bool(byok.get_user_key(session)) if email else False
+    server_key_ok = byok.server_key_allowed(email) if email else False
+    remaining = None
+    if not email:
+        remaining = min(
+            max(ai_gate.FREE_QUERIES - int(session.get("free_q", 0) or 0), 0),
+            quota.guest_remaining(ai_gate.client_ip(request)),
+        )
+    return page(
+        "ai", ENV_LABEL, email, thread_id,
+        main_chat(
+            thread_id, history, email=email, has_key=has_key,
+            server_key_ok=server_key_ok, free_remaining=remaining,
+        ),
+    )
+
+
+@rt("/ai/api-key", methods=["GET"])
+def api_key_status(session):
+    email = _user(session) or ""
+    if not email:
+        return JSONResponse({"error": "login_required"}, status_code=401)
+    provider, key, model = byok.get_user_cred(session)
+    return JSONResponse({
+        "has_key": bool(key),
+        "provider": provider or "",
+        "model": model or "",
+        "server_key_ok": byok.server_key_allowed(email),
+    })
+
+
+@rt("/ai/api-key", methods=["POST"])
+async def api_key_save(session, request):
+    email = _user(session) or ""
+    if not email:
+        return JSONResponse({"error": "login_required"}, status_code=401)
+    form = await request.form()
+    if (form.get("remove") or "").strip() in {"1", "true", "yes"}:
+        byok.set_user_key(session, "")
+        return JSONResponse({"ok": True, "has_key": False})
+    key = (form.get("api_key") or "").strip()
+    if not byok.valid_key_shape(key):
+        return JSONResponse({"error": "invalid_key", "message": "That does not look like an xAI API key."}, status_code=400)
+    live = byok.verify_key_live(key)
+    if live is False:
+        return JSONResponse({"error": "invalid_key", "message": "xAI rejected that API key."}, status_code=400)
+    byok.set_user_key(session, key)
+    return JSONResponse({"ok": True, "has_key": True, "verified": live is True})
 
 
 @rt("/guide")
@@ -553,27 +607,41 @@ def get(session, format: str = ""):
 
 
 @rt("/chat/stream")
-async def post(session, message: str = "", thread_id: str = "", query_mode: str = "auto"):
-    if not _user(session):
-        return Response("Unauthorized", status_code=401)
+async def post(session, request, message: str = "", thread_id: str = "", query_mode: str = "auto"):
     message = (message or "").strip()
     if not message:
         return Response("No message", status_code=400)
+    is_command = ai.handle_command(message) is not None
+    denied = ai_gate.evaluate(request, session, consume=not is_command)
+    if denied:
+        return ai_gate.json_reject(denied)
     tid = thread_id or _thread(session)
+    consumed = (not is_command) and (not _user(session))
 
     async def gen():
-        with db.cursor() as conn:
-            conn.execute("INSERT INTO chat_messages(thread_id,role,content,created) VALUES(?,?,?,datetime('now'))",
-                         (tid, "user", message))
-        full = []
-        async for chunk in ai.stream_chat(message, query_mode):
-            event_name, payload = parse_sse(chunk)
-            if event_name == "token" and payload.get("token"):
-                full.append(payload["token"])
-            yield chunk
-        with db.cursor() as conn:
-            conn.execute("INSERT INTO chat_messages(thread_id,role,content,created) VALUES(?,?,?,datetime('now'))",
-                         (tid, "assistant", "".join(full)))
+        failed = False
+        try:
+            with db.cursor() as conn:
+                conn.execute("INSERT INTO chat_messages(thread_id,role,content,created) VALUES(?,?,?,datetime('now'))",
+                             (tid, "user", message))
+            full = []
+            async for chunk in ai.stream_chat(message, query_mode):
+                event_name, payload = parse_sse(chunk)
+                if event_name == "token" and payload.get("token"):
+                    full.append(payload["token"])
+                if event_name == "error":
+                    failed = True
+                yield chunk
+            if not failed:
+                with db.cursor() as conn:
+                    conn.execute("INSERT INTO chat_messages(thread_id,role,content,created) VALUES(?,?,?,datetime('now'))",
+                                 (tid, "assistant", "".join(full)))
+        except Exception:
+            failed = True
+            raise
+        finally:
+            if failed and consumed:
+                ai_gate.refund_if_guest(request, session, True)
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive",

@@ -90,6 +90,7 @@ a chart and table. The model never touches the database directly.
 MODEL_PROVIDER=xai          # xai | openai | anthropic | google
 MODEL_NAME=grok-4.5
 XAI_API_KEY=...
+FREE_QUERIES=3            # guest questions on the server key before sign-in + BYOK
 ```
 
 Without a key, dashboards, saved queries, the SQL lab, and slash-commands all

@@ -27,6 +27,12 @@ a{color:var(--accent);text-decoration:none;} a:hover{text-decoration:underline;}
 .brand{font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px;font-size:16px;}
 .brand-dot{width:11px;height:11px;background:var(--accent);border-radius:3px;display:inline-block;}
 .brand-wordmark{font-weight:800;color:var(--text);}
+.app-version{color:var(--text-mute);font-size:11px;font-weight:500;letter-spacing:0;}
+.api-key-panel{margin:0 clamp(20px,7vw,96px) 10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);font-size:12.5px;color:var(--text-dim);}
+.api-key-panel form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;}
+.api-key-panel input[type=password]{flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;}
+.api-key-panel .api-key-msg{margin:6px 0 0;color:var(--text-mute);}
+.api-key-panel .api-key-msg.err{color:var(--danger);}
 .env-pill{background:var(--accent-light);color:var(--accent-hover);padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
 .topbar .actions{display:flex;gap:10px;align-items:center;}
 .left-pane{grid-area:left;background:var(--surface);border-right:1px solid var(--border);padding:12px 0;overflow-y:auto;}
@@ -158,12 +164,15 @@ SAMPLE_QUESTIONS = [
 
 
 def topbar(env, user_email, show_copilot=False):
+    from version import version_label
     right = Div(
         Button(NotStr("&laquo; Copilot"), id="copilot-topbar-toggle", cls="btn", onclick="toggleCopilot()") if user_email and show_copilot else None,
         Span(env, cls="env-pill"),
         Span(user_email or "", style="color:var(--text-mute);font-size:12px;") if user_email else None,
+        A("Sign in", href="/login", cls="btn") if not user_email else None,
         A("Logout", href="/logout", cls="btn") if user_email else None, cls="actions")
-    return Div(Div(Span(cls="brand-dot"), Span("FastBI", cls="brand-wordmark"), cls="brand"),
+    return Div(Div(Span(cls="brand-dot"), Span("FastBI", cls="brand-wordmark"),
+                   Span(version_label(), data_testid="app-version", cls="app-version"), cls="brand"),
                right, cls="topbar")
 
 
@@ -207,7 +216,33 @@ def right_pane_chat(thread_id):
         data_chat_root="copilot", cls="right-pane")
 
 
-def main_chat(thread_id, messages=()):
+def _api_key_panel(email="", has_key=False, server_key_ok=False, free_remaining=None):
+    """Compact BYOK / free-quota notice that does not change the chat layout."""
+    if email and server_key_ok and not has_key:
+        return None
+    if email:
+        status = "An xAI API key is saved and stored encrypted." if has_key else "Add your own xAI API key to keep asking after the shared allowance."
+        remove = Button("Remove key", type="submit", name="remove", value="1", cls="btn") if has_key else None
+        return Div(
+            P(status, id="api-key-status"),
+            Form(
+                Input(type="password", name="api_key", placeholder="xai-…", autocomplete="off", aria_label="xAI API key"),
+                Button("Save key", type="submit", cls="btn primary"),
+                remove,
+                onsubmit="return saveApiKey(event)",
+            ),
+            P(id="api-key-msg", cls="api-key-msg"),
+            id="api-key", cls="api-key-panel",
+        )
+    left = "unlimited" if free_remaining is None else str(free_remaining)
+    return Div(
+        P(f"You have {left} free question{'s' if left != '1' else ''} on FastBI. ",
+          A("Sign in", href="/login"), " and add your own xAI API key to keep asking."),
+        id="api-key", cls="api-key-panel",
+    )
+
+
+def main_chat(thread_id, messages=(), email="", has_key=False, server_key_ok=False, free_remaining=None):
     history = []
     for item in messages:
         role = "user" if item.get("role") == "user" else "assistant"
@@ -223,6 +258,7 @@ def main_chat(thread_id, messages=()):
     return Div(
         Div(Div(Span(cls="brand-dot"), H2("AI Assistant"), Span("Live", cls="ai-status"), cls="ai-workspace-title"),
             Button("New conversation", cls="btn", type="button", onclick="newChat(this)"), cls="ai-workspace-header"),
+        _api_key_panel(email, has_key, server_key_ok, free_remaining),
         Div(welcome, *history, data_role="messages", cls="main-chat-body"),
         Form(
             Input(type="hidden", name="thread_id", value=thread_id, data_role="thread"),
@@ -319,7 +355,7 @@ async function streamChat(ev){if(ev&&ev.preventDefault)ev.preventDefault();
   var tid=parts.thread?parts.thread.value:'',bubble=null,acc='';showProgress(root);var mode=parts.mode?parts.mode.value:'auto';
   try{var resp=await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
     body:new URLSearchParams({message:msg,thread_id:tid,query_mode:mode})});
-    if(!resp.ok){hideProgress(root);addBubble(root,'assistant','Error: '+resp.status);root.dataset.streaming='0';if(parts.send)parts.send.disabled=false;return false;}
+    if(!resp.ok){hideProgress(root);var msg='Error: '+resp.status;try{var err=await resp.json();msg=_esc(err.message||err.error||msg);if(err.error==='login_required')msg+=' <a href="/login">Sign in</a>';if(err.error==='api_key_required')msg+=' <a href="#api-key">Add an API key</a>';}catch(e){}addBubble(root,'assistant',msg);root.dataset.streaming='0';if(parts.send)parts.send.disabled=false;return false;}
     var reader=resp.body.getReader(),dec=new TextDecoder(),buf='';
     while(true){var r=await reader.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true});
       var idx;while((idx=buf.indexOf('\\n\\n'))!==-1){var raw=buf.slice(0,idx);buf=buf.slice(idx+2);
@@ -333,6 +369,17 @@ async function streamChat(ev){if(ev&&ev.preventDefault)ev.preventDefault();
   hideProgress(root);root.dataset.streaming='0';if(parts.send)parts.send.disabled=false;if(input)input.focus();return false;}
 async function newChat(btn){var root=btn.closest('[data-chat-root]'),parts=_parts(root);if(!root)return;try{var resp=await fetch('/chat/new?format=json'),data=await resp.json();if(parts.thread)parts.thread.value=data.thread_id;
   parts.messages.innerHTML='<div class="ai-welcome" data-role="welcome"><div class="ai-welcome-mark">✦</div><h1>Ask your data anything</h1><p>FastBI routes each question to governed SQL, your graph ontology, or the general assistant, then streams the answer and visual evidence as it is created.</p></div>';if(parts.input)parts.input.focus();}catch(e){}}
+async function saveApiKey(ev){if(ev&&ev.preventDefault)ev.preventDefault();
+  var form=ev.currentTarget,msg=document.getElementById('api-key-msg'),status=document.getElementById('api-key-status');
+  if(msg){msg.textContent='';msg.className='api-key-msg';}
+  try{var resp=await fetch('/ai/api-key',{method:'POST',body:new FormData(form)});
+    var data={};try{data=await resp.json();}catch(e){}
+    if(!resp.ok){if(msg){msg.textContent=data.message||data.error||('Error '+resp.status);msg.classList.add('err');}return false;}
+    if(status)status.textContent=data.has_key?'An xAI API key is saved and stored encrypted.':'API key removed.';
+    if(msg)msg.textContent=data.has_key?'Saved.':'Removed.';
+    var input=form.querySelector('input[name=api_key]');if(input)input.value='';
+  }catch(e){if(msg){msg.textContent=String(e);msg.classList.add('err');}}
+  return false;}
 document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-markdown]').forEach(function(el){el.innerHTML=_md(el.getAttribute('data-markdown')||'');});document.querySelectorAll('.composer-shell textarea').forEach(resizeChatInput);});
 document.body.addEventListener('htmx:afterSwap',function(ev){
   var root=(ev.detail&&ev.detail.target)||document;

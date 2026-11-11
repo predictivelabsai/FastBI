@@ -211,10 +211,10 @@ async def stream_chat(message, query_mode: str = "auto"):
 
 def text_to_sql(question: str) -> tuple[str, str]:
     """Return (sql, note). Raises RuntimeError with a friendly message on failure."""
-    key_env = {"xai": "XAI_API_KEY", "openai": "OPENAI_API_KEY",
-               "anthropic": "ANTHROPIC_API_KEY", "google": "GOOGLE_API_KEY"}.get(PROVIDER)
-    if not key_env or not os.getenv(key_env):
-        raise RuntimeError(f"No {key_env or 'LLM'} configured — set it in .env to use AI SQL generation.")
+    if not _llm_key(PROVIDER):
+        key_env = {"xai": "XAI_API_KEY", "openai": "OPENAI_API_KEY",
+                   "anthropic": "ANTHROPIC_API_KEY", "google": "GOOGLE_API_KEY"}.get(PROVIDER)
+        raise RuntimeError(f"No {key_env or 'LLM'} configured — set it in .env or add your own API key.")
     system = SQL_SYSTEM.format(schema=db.schema_prompt())
     raw = _complete(system, question)
     sql = _extract_sql(raw)
@@ -232,19 +232,33 @@ def _extract_sql(text: str) -> str:
     return (m.group(1).strip().rstrip(";") if m else "")
 
 
+def _llm_key(provider: str) -> str:
+    """Prefer a per-request BYOK credential; otherwise the shared server key."""
+    try:
+        from web import byok
+        user_key = byok.current_key()
+        if user_key:
+            return user_key
+    except Exception:  # noqa: BLE001
+        pass
+    env = {"xai": "XAI_API_KEY", "openai": "OPENAI_API_KEY",
+           "anthropic": "ANTHROPIC_API_KEY", "google": "GOOGLE_API_KEY"}.get(provider, "")
+    return os.getenv(env, "") if env else ""
+
+
 def _complete(system: str, user: str) -> str:
     import httpx
     provider, model = PROVIDER, MODEL
     if provider in ("xai", "openai"):
         url = "https://api.x.ai/v1/chat/completions" if provider == "xai" else "https://api.openai.com/v1/chat/completions"
-        key = os.getenv("XAI_API_KEY" if provider == "xai" else "OPENAI_API_KEY", "")
+        key = _llm_key(provider)
         r = httpx.post(url, headers={"Authorization": f"Bearer {key}"},
                        json={"model": model, "messages": [{"role": "system", "content": system},
                                                           {"role": "user", "content": user}]}, timeout=60)
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
     if provider == "anthropic":
-        key = os.getenv("ANTHROPIC_API_KEY", "")
+        key = _llm_key("anthropic")
         r = httpx.post("https://api.anthropic.com/v1/messages",
                        headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
                        json={"model": model, "max_tokens": 600, "system": system,
@@ -252,7 +266,7 @@ def _complete(system: str, user: str) -> str:
         r.raise_for_status()
         return r.json()["content"][0]["text"]
     if provider == "google":
-        key = os.getenv("GOOGLE_API_KEY", "")
+        key = _llm_key("google")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
         r = httpx.post(url, json={"system_instruction": {"parts": [{"text": system}]},
                                   "contents": [{"role": "user", "parts": [{"text": user}]}]}, timeout=60)
@@ -266,7 +280,7 @@ async def _provider_stream(system, message):
     provider, model = PROVIDER, MODEL
     if provider in ("xai", "openai"):
         url = "https://api.x.ai/v1/chat/completions" if provider == "xai" else "https://api.openai.com/v1/chat/completions"
-        key = os.getenv("XAI_API_KEY" if provider == "xai" else "OPENAI_API_KEY", "")
+        key = _llm_key(provider)
         if not key:
             yield _no_key(provider); return
         async with httpx.AsyncClient(timeout=90) as client:
@@ -282,7 +296,7 @@ async def _provider_stream(system, message):
                         except (json.JSONDecodeError, KeyError, IndexError):
                             pass
     elif provider == "anthropic":
-        key = os.getenv("ANTHROPIC_API_KEY", "")
+        key = _llm_key("anthropic")
         if not key:
             yield _no_key(provider); return
         async with httpx.AsyncClient(timeout=90) as client:
@@ -300,7 +314,7 @@ async def _provider_stream(system, message):
                         except json.JSONDecodeError:
                             pass
     elif provider == "google":
-        key = os.getenv("GOOGLE_API_KEY", "")
+        key = _llm_key("google")
         if not key:
             yield _no_key(provider); return
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={key}"
